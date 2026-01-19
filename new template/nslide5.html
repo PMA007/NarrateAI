@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thank You Slide Replica</title>
+
+  <style>
+    :root{
+      --ink:#243a8a;       /* ring + stars */
+      --border:#d6dbe9;
+      --radius:16px;
+      --brown:#2b1b12;     /* THANK YOU */
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      height:100vh;
+      display:grid;
+      place-items:center;
+      background:#0b1220;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .slide{
+      width:min(1200px, 92vw);
+      aspect-ratio:16/9;
+      border-radius: var(--radius);
+      border:2px solid var(--border);
+      position:relative;
+      overflow:hidden;
+      box-shadow:0 10px 40px rgba(0,0,0,.35);
+      background:
+        radial-gradient(120% 120% at 20% 18%, #f2f6ff 0%, #d5e3f6 36%, #a4bcd6 72%, #8aa3be 100%);
+    }
+
+    /* grain overlay */
+    .slide::before{
+      content:"";
+      position:absolute;
+      inset:-60px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+      opacity:.17;
+      mix-blend-mode:multiply;
+      pointer-events:none;
+      transform:rotate(2deg);
+    }
+
+    /* vignette */
+    .slide::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:
+        radial-gradient(110% 110% at 50% 12%, rgba(255,255,255,.26) 0%, rgba(255,255,255,0) 42%),
+        radial-gradient(110% 110% at 80% 70%, rgba(0,0,0,.14) 0%, rgba(0,0,0,0) 55%),
+        radial-gradient(120% 120% at 50% 50%, rgba(0,0,0,0) 58%, rgba(0,0,0,.18) 100%);
+      pointer-events:none;
+    }
+
+    /* Text */
+    .text{
+      position:absolute;
+      left:50%;
+      top:46%;
+      transform:translate(-50%,-50%);
+      z-index:5;
+      text-align:left;
+    }
+
+    .text h1{
+      margin:0;
+      font-size: clamp(62px, 8vw, 140px);
+      line-height: 0.92;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: var(--brown);
+      text-shadow: 0 1px 0 rgba(255,255,255,.45);
+    }
+
+    /* Ring group */
+    .ringWrap{
+      position:absolute;
+      inset:0;
+      display:grid;
+      place-items:center;
+      z-index:3;
+    }
+
+    .ringSvg{
+      width: 92%;
+      height: 78%;
+      transform: rotate(-14deg);
+      transform-origin: center;
+      animation: ringSpin 28s linear infinite;
+      filter: drop-shadow(0 14px 30px rgba(0,0,0,.08));
+    }
+
+    @keyframes ringSpin{
+      from{ transform:rotate(-14deg) rotate(0deg); }
+      to  { transform:rotate(-14deg) rotate(360deg); }
+    }
+
+    /* Sparkles: rotate independently (continuous) */
+    .sparkle{
+      position:absolute;
+      width:56px;
+      height:56px;
+      z-index:4;
+      filter: drop-shadow(0 12px 20px rgba(0,0,0,.10));
+      animation: spin 5s linear infinite;
+    }
+    .sparkle.small{
+      width:26px;
+      height:26px;
+      animation-duration: 3.4s;
+    }
+    .sparkle.mid{
+      width:34px;
+      height:34px;
+      animation-duration: 4.4s;
+    }
+    .sparkle.big{
+      width:64px;
+      height:64px;
+      animation-duration: 6.2s;
+    }
+
+    @keyframes spin{
+      from{ transform:rotate(0deg); }
+      to{ transform:rotate(360deg); }
+    }
+
+    /* Positions (match image layout) */
+    .s1{ left:18%; top:32%; }           /* big left */
+    .s1b{ left:24.2%; top:29.5%; }      /* tiny beside */
+    .s2{ right:13.8%; top:26.2%; }      /* right star */
+    .s2b{ right:9.4%; top:23.5%; }      /* tiny beside */
+    .s3{ left:57%; top:60.2%; }         /* bottom center */
+    .s3b{ left:61.6%; top:56.8%; }      /* small above */
+  </style>
+</head>
+
+<body>
+  <div class="slide">
+
+    <!-- Rotating ellipse ring -->
+    <div class="ringWrap" aria-hidden="true">
+      <svg class="ringSvg" viewBox="0 0 1200 720">
+        <!-- ellipse ring -->
+        <ellipse
+          cx="600" cy="360"
+          rx="520" ry="250"
+          fill="none"
+          stroke="#243a8a"
+          stroke-width="3"
+          stroke-linecap="round"
+          opacity="0.95"
+        />
+      </svg>
+
+      <!-- Sparkles (curved 4-point elongated shape) -->
+      <!-- BIG left sparkle -->
+      <svg class="sparkle big s1" viewBox="0 0 100 100">
+        <path
+          d="M50 4
+             C58 28 66 34 96 50
+             C66 58 58 66 50 96
+             C42 66 34 58 4 50
+             C34 34 42 28 50 4Z"
+          fill="#243a8a" />
+      </svg>
+
+      <svg class="sparkle small s1b" viewBox="0 0 100 100">
+        <path
+          d="M50 8
+             C56 30 65 37 92 50
+             C65 58 56 70 50 92
+             C44 70 35 58 8 50
+             C35 37 44 30 50 8Z"
+          fill="#243a8a" />
+      </svg>
+
+      <!-- Right sparkle -->
+      <svg class="sparkle mid s2" viewBox="0 0 100 100">
+        <path
+          d="M50 6
+             C58 28 66 34 94 50
+             C66 58 58 66 50 94
+             C42 66 34 58 6 50
+             C34 34 42 28 50 6Z"
+          fill="#243a8a" />
+      </svg>
+
+      <svg class="sparkle small s2b" viewBox="0 0 100 100">
+        <path
+          d="M50 9
+             C56 30 65 37 91 50
+             C65 58 56 70 50 91
+             C44 70 35 58 9 50
+             C35 37 44 30 50 9Z"
+          fill="#243a8a" />
+      </svg>
+
+      <!-- Bottom sparkle -->
+      <svg class="sparkle big s3" viewBox="0 0 100 100">
+        <path
+          d="M50 4
+             C58 28 66 34 96 50
+             C66 58 58 66 50 96
+             C42 66 34 58 4 50
+             C34 34 42 28 50 4Z"
+          fill="#243a8a" />
+      </svg>
+
+      <svg class="sparkle mid s3b" viewBox="0 0 100 100">
+        <path
+          d="M50 6
+             C57 28 66 35 94 50
+             C66 58 57 66 50 94
+             C43 66 34 58 6 50
+             C34 35 43 28 50 6Z"
+          fill="#243a8a" />
+      </svg>
+    </div>
+
+    <!-- Text -->
+    <div class="text">
+      <h1>THANK<br/>YOU</h1>
+    </div>
+
+  </div>
+</body>
+</html>

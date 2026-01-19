@@ -1,0 +1,66 @@
+import React from 'react';
+import { Slide as SlideType } from '@/lib/store';
+import { THEMES, ThemeType } from './theme';
+import { getSlideCategory, SlideComponentProps } from '@/components/themes/types';
+import { NeonSlideRegistry } from '@/components/themes/neon';
+import { RetroSlideRegistry } from '@/components/themes/retro';
+
+interface SlideRendererProps {
+    slide: SlideType;
+    index: number;
+    localTime: number;
+    width: number;
+    height: number;
+    fontFamily: string;
+    template?: ThemeType;
+    onElementClick?: (elementId: string, value: string) => void;
+    elementStyles?: Record<string, { fontFamily?: string; fontSize?: number; color?: string }>;
+}
+
+/**
+ * SlideRenderer - Central component that selects and renders the appropriate slide
+ * based on the theme and slide content type
+ */
+export function SlideRenderer({
+    slide,
+    index,
+    localTime,
+    width,
+    height,
+    fontFamily,
+    template = 'neon',
+    onElementClick,
+    elementStyles = {}
+}: SlideRendererProps) {
+    // Get the theme configuration
+    const theme = THEMES[template] || THEMES['neon'];
+
+    // Determine which slide category to use
+    const category = getSlideCategory(slide, index);
+
+    // Select the appropriate registry based on theme
+    const registry = template === 'retro' ? RetroSlideRegistry : NeonSlideRegistry;
+
+    // Get the slide component for this category
+    const SlideComponent = registry[category];
+
+    if (!SlideComponent) {
+        console.warn(`No slide component found for category: ${category}`);
+        return null;
+    }
+
+    // Prepare props for the slide component
+    const props: SlideComponentProps = {
+        slide,
+        index,
+        localTime,
+        width,
+        height,
+        fontFamily,
+        theme,
+        onElementClick,
+        elementStyles
+    };
+
+    return <SlideComponent {...props} />;
+}
