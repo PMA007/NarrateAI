@@ -70,7 +70,6 @@ export async function generateSpeechGemini(
             }],
             generationConfig: {
                 responseModalities: ["AUDIO"],
-                responseMimeType: "audio/mp3",
                 speechConfig: {
                     voiceConfig: {
                         prebuiltVoiceConfig: {
@@ -112,6 +111,11 @@ export async function generateSpeechGemini(
         console.log(`ℹ️ Gemini Audio MIME: ${mimeType}`);
         console.log(`🔍 Magic Bytes: ${header}`); // fff3/fff2=MP3, 52494646=WAV
 
+        if (mimeType.startsWith('audio/L16') || mimeType.includes('pcm')) {
+            console.log(`ℹ️ Converting RAW PCM to WAV (Rate: 24000Hz, Channels: 1)`);
+            return addWavHeader(audioBuffer, 24000, 1, 16);
+        }
+
         return audioBuffer;
 
     } catch (error: any) {
@@ -120,6 +124,40 @@ export async function generateSpeechGemini(
         console.log("⚠️ Falling back to Google TTS...");
         return generateSpeechGoogle(text, fallbackVoice);
     }
+}
+
+/**
+ * Adds a WAV header to raw PCM data
+ * Spec: http://soundfile.sapp.org/doc/WaveFormat/
+ */
+function addWavHeader(samples: Buffer, sampleRate: number, channels: number, bitDepth: number): Buffer {
+    const byteRate = (sampleRate * channels * bitDepth) / 8;
+    const blockAlign = (channels * bitDepth) / 8;
+    const dataSize = samples.length;
+    const totalSize = 36 + dataSize;
+
+    const buffer = Buffer.alloc(44);
+
+    // RIFF Chunk
+    buffer.write('RIFF', 0);
+    buffer.writeUInt32LE(totalSize, 4);
+    buffer.write('WAVE', 8);
+
+    // fmt Chunk
+    buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+    buffer.writeUInt16LE(1, 20);     // AudioFormat (1 for PCM)
+    buffer.writeUInt16LE(channels, 22);
+    buffer.writeUInt32LE(sampleRate, 24);
+    buffer.writeUInt32LE(byteRate, 28);
+    buffer.writeUInt16LE(blockAlign, 32);
+    buffer.writeUInt16LE(bitDepth, 34);
+
+    // data Chunk
+    buffer.write('data', 36);
+    buffer.writeUInt32LE(dataSize, 40);
+
+    return Buffer.concat([buffer, samples]);
 }
 
 /**

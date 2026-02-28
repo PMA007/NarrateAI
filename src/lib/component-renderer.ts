@@ -1,7 +1,7 @@
 
 import * as Mp4Muxer from 'mp4-muxer';
 import { toCanvas } from 'html-to-image';
-import { Slide } from '@/lib/store';
+import { Slide, Script } from '@/lib/store';
 
 interface RenderOptions {
     width?: number;
@@ -15,11 +15,6 @@ interface SlideTimeline {
     endTime: number;
     duration: number;
     slide: Slide;
-}
-
-interface Script {
-    template?: 'neon' | 'retro';
-    slides: Slide[];
 }
 
 export type RenderState = {
@@ -188,12 +183,14 @@ export class ComponentRenderer {
             try {
                 // toCanvas is cleaner than toPixelData for VideoFrame if we can trust it
                 // But VideoFrame needs Canvas/ImageBitmap/OffscreenCanvas
-                const canvas = await toCanvas(container, {
+                let canvas = await toCanvas(container, {
                     width: this.width,
                     height: this.height,
                     pixelRatio: 1, // Capture at exact resolution
-                    skipAutoScale: true, // Optimization: skip auto-scaling
-                    fontEmbedCSS: ' ', // Optimization: skip internal font fetching (we handle it manually)
+                    cacheBust: false, // CRITICAL: Prevent appending timestamp to URLs, which duplicates image data in memory
+                    includeQueryParams: false, // Keep URLs clean
+                    skipAutoScale: true, // Optimization: Prevent internal scaling logic
+                    skipFonts: true, // Optimization: We inject fonts manually, don't fetch them again
                     style: {
                         transform: 'scale(1)', // Ensure no scaling
                         transformOrigin: 'top left'
@@ -209,6 +206,13 @@ export class ComponentRenderer {
                 const isKeyFrame = frameIndex % (this.fps * 2) === 0;
                 videoEncoder.encode(frame, { keyFrame: isKeyFrame });
                 frame.close();
+
+                // Aggressive cleanup hint
+                if (canvas) {
+                    canvas.width = 0;
+                    canvas.height = 0;
+                    (canvas as any) = null;
+                }
 
             } catch (err) {
                 console.error(`❌ Frame capture error at ${currentTime}s:`, err);

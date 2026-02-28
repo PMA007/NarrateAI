@@ -158,12 +158,7 @@ export const RetroFlowchartSlide: React.FC<SlideComponentProps> = ({
                                     lineHeight: '1.3'
                                 }}
                             >
-                                <style>{`
-                                    * {
-                                        color: #111 !important;
-                                        font-family: ${fontFamily || theme.fonts.body} !important;
-                                    }
-                                `}</style>
+
                                 {step}
                             </div>
                         </foreignObject>

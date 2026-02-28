@@ -13,6 +13,8 @@ import dynamic from 'next/dynamic';
 
 const NeonSequence = dynamic(() => import('@/components/canvas/NeonSequence').then(m => m.NeonSequence), { ssr: false });
 const RetroSequence = dynamic(() => import('@/components/canvas/RetroSequence').then(m => m.RetroSequence), { ssr: false });
+const BrutalistSequence = dynamic(() => import('@/components/canvas/BrutalistSequence').then(m => m.BrutalistSequence), { ssr: false });
+const NanoBannaSequence = dynamic(() => import('@/components/canvas/NanoBannaSequence').then(m => m.NanoBannaSequence), { ssr: false });
 
 export default function RenderPage() {
     const router = useRouter();
@@ -65,12 +67,24 @@ export default function RenderPage() {
 
         // Fetch Font CSS to avoid CORS issues with html-to-image
         const fontConfig = FONT_OPTIONS[selectedFont as FontKey] || FONT_OPTIONS['Modern'];
-        if (fontConfig.url) {
-            fetch(fontConfig.url)
-                .then(res => res.text())
-                .then(css => setFontCss(css))
-                .catch(err => console.error("Failed to load font CSS", err));
+        const fontUrlsToFetch: string[] = [fontConfig.url];
+
+        // Add Theme Specific Fonts
+        const currentTemplate = script.template || 'neon';
+        if (currentTemplate === 'brutalist') {
+            fontUrlsToFetch.push('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&display=swap');
+            fontUrlsToFetch.push('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@100..700&display=swap');
         }
+        if (currentTemplate === 'nanobanna') {
+            fontUrlsToFetch.push('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Fira+Code&display=swap');
+        }
+        // Retro fonts (Georgia, Trebuchet MS) are system fonts, no fetch needed.
+
+        Promise.all(fontUrlsToFetch.map(url => fetch(url).then(res => res.text())))
+            .then(cssArray => {
+                setFontCss(cssArray.join('\n'));
+            })
+            .catch(err => console.error("Failed to load font CSS", err));
 
         if (status === 'idle' && !hasStartedRef.current) {
             hasStartedRef.current = true;
@@ -141,6 +155,31 @@ export default function RenderPage() {
             // Wait for fonts to load
             await document.fonts.ready;
 
+            // PRELOAD IMAGES to avoid 404s and redundant network requests during render
+            const imagesToPreload: string[] = [
+                // '/brutalist-bg.webp', // Removed to reduce memory load
+            ];
+
+            const loadedImages: Record<string, string> = {};
+
+            setStatusMessage('Preloading assets...');
+            await Promise.all(imagesToPreload.map(async (src) => {
+                try {
+                    const response = await fetch(src);
+                    if (!response.ok) throw new Error(`Failed to load ${src}`);
+                    const blob = await response.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+                    loadedImages[src] = objectUrl;
+                } catch (e) {
+                    console.warn(`Failed to preload image: ${src}`, e);
+                    // If it fails, we just don't put it in the map, and the component might try to fetch it normally (and likely fail again, but graceful degradation)
+                }
+            }));
+
+            // Save to store
+            useStore.getState().setPreloadedAssets(loadedImages);
+
+
             // PHASE 3: RENDER VIDEO
             setStatus('rendering');
             setStatusMessage('Rendering video...');
@@ -180,6 +219,11 @@ export default function RenderPage() {
             setVideoUrl(videoUrlObj);
             setStatus('complete');
 
+            // CLEANUP: Revoke Preloaded Assets to free memory
+            const preloaded = useStore.getState().preloadedAssets;
+            Object.values(preloaded).forEach(url => URL.revokeObjectURL(url));
+            useStore.getState().setPreloadedAssets({}); // Clear from store
+
         } catch (e) {
             console.error(e);
             setErrorMsg(String(e));
@@ -197,7 +241,11 @@ export default function RenderPage() {
 
     // Select Sequence Component based on the ACTIVE script
     const templateName = activeScript?.template || 'neon';
-    const SequenceComponent = templateName === 'retro' ? RetroSequence : NeonSequence;
+    const SequenceComponent =
+        templateName === 'retro' ? RetroSequence :
+            templateName === 'brutalist' ? BrutalistSequence :
+                templateName === 'nanobanna' ? NanoBannaSequence :
+                    NeonSequence;
 
     return (
         <div className="min-h-screen bg-neutral-950 text-white p-8 font-sans selection:bg-cyan-500/30">
@@ -225,26 +273,63 @@ export default function RenderPage() {
                     overflow: 'hidden',
                     left: 0, // Keep it on screen so it renders
                     visibility: 'visible', // Explicitly visible
-                    fontFamily: fontConfig.family // Ensure font is inherited
+                    fontFamily: fontConfig.family, // Ensure font is inherited
+                    color: 'initial' // CRITICAL: Reset color to prevent inheriting text-white from parent container
                 }}
             >
                 {renderState.isRendering && currentSlide && activeScript && (
                     <>
-                        {console.log('🔤 Font Debug:', {
-                            selectedFont,
-                            fontFamily: fontConfig.family,
-                            fontCssLength: fontCss?.length || 0,
-                            fontCssPreview: fontCss?.substring(0, 200)
-                        })}
+                        {/* 1. Retro Background Override (Matches Canvas) */}
+                        {templateName === 'retro' && (
+                            <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                background: 'radial-gradient(120% 120% at 20% 18%, #f2f6ff 0%, #d5e3f6 36%, #a4bcd6 72%, #8aa3be 100%)',
+                                zIndex: -1 // Behind sequence
+                            }}>
+                                <div style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    background: `
+                                        radial-gradient(110% 110% at 50% 10%, rgba(255,255,255,.26) 0%, rgba(255,255,255,0) 42%),
+                                        radial-gradient(110% 110% at 80% 70%, rgba(0,0,0,.16) 0%, rgba(0,0,0,0) 55%),
+                                        radial-gradient(120% 120% at 50% 50%, rgba(0,0,0,0) 58%, rgba(0,0,0,.20) 100%)
+                                    `,
+                                }} />
+                            </div>
+                        )}
+
                         <SequenceComponent
                             slide={currentSlide}
                             index={renderState.currentSlideIndex}
                             localTime={renderState.currentLocalTime}
                             width={1280}
                             height={720}
-                            fontFamily={fontConfig.family} // Use actual CSS family, not key
+                            fontFamily={fontConfig.family}
                             fontUrl={fontConfig.url}
-                            fontCss={fontCss} // Pass raw CSS
+                            fontCss={fontCss}
+                            // Pass Localized Animations
+                            elementAnimations={
+                                Object.entries(useStore.getState().elementAnimations)
+                                    .reduce((acc, [key, anim]) => {
+                                        if (key.startsWith(`slide-${renderState.currentSlideIndex}-`)) {
+                                            const localKey = key.replace(`slide-${renderState.currentSlideIndex}-`, '');
+                                            acc[localKey] = anim;
+                                        }
+                                        return acc;
+                                    }, {} as any)
+                            }
+                            // Pass Localized Styles
+                            elementStyles={
+                                Object.entries(useStore.getState().elementStyles)
+                                    .reduce((acc, [key, style]) => {
+                                        if (key.startsWith(`slide-${renderState.currentSlideIndex}-`)) {
+                                            const localKey = key.replace(`slide-${renderState.currentSlideIndex}-`, '');
+                                            acc[localKey] = style;
+                                        }
+                                        return acc;
+                                    }, {} as any)
+                            }
                         />
                     </>
                 )}

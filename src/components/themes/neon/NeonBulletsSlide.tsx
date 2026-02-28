@@ -1,5 +1,5 @@
 import React from 'react';
-import { SlideComponentProps, useAnimation } from '../types';
+import { SlideComponentProps, useDynamicAnimation } from '../types';
 
 /**
  * Neon Theme - Bullet Points Slide
@@ -11,36 +11,94 @@ export const NeonBulletsSlide: React.FC<SlideComponentProps> = ({
     width,
     height,
     fontFamily,
-    theme
+    theme,
+    onElementClick,
+    activeElementId,
+    elementAnimations = {}
 }) => {
-    const { title, content } = slide;
+    const { title, content, slide_id } = slide;
     const bullets = content.bullets || [];
-    const titleAnim = useAnimation(localTime, 0, 1.5);
+
+    // IDs
+    const titleId = `slide-${slide_id}-title`;
+
+    // Animation Configs
+    const titleAnimConfig = elementAnimations[titleId] || { type: 'fade', duration: 1.5, delay: 0 };
+    const titleAnim = useDynamicAnimation(localTime, 0, titleAnimConfig);
+
+    const isTitleActive = activeElementId === titleId;
 
     return (
         <g>
             {/* Title */}
-            <text
-                x={width / 2}
-                y={120}
-                textAnchor="middle"
-                fontSize="72"
-                fill={theme.colors.text.primary}
-                fontFamily={theme.fonts.heading}
-                fontWeight="bold"
-                opacity={titleAnim.eased}
+            <g
+                onClick={(e) => { e.stopPropagation(); onElementClick?.(titleId, title); }}
+                style={{ cursor: 'pointer' }}
+                opacity={titleAnim.opacity}
+                transform={`translate(${titleAnim.x}, ${titleAnim.y}) scale(${titleAnim.scale})`}
             >
-                {title}
-            </text>
+                {/* Selection Box */}
+                {isTitleActive && (
+                    <rect
+                        x={width / 2 - 400}
+                        y={50}
+                        width={800}
+                        height={100}
+                        fill="none"
+                        stroke="#22d3ee"
+                        strokeWidth="2"
+                        strokeDasharray="5,5"
+                        rx="8"
+                    />
+                )}
+
+                <text
+                    x={width / 2}
+                    y={120}
+                    textAnchor="middle"
+                    fontSize="72"
+                    fill={theme.colors.text.primary}
+                    fontFamily={theme.fonts.heading}
+                    fontWeight="bold"
+                    style={{ filter: titleAnim.blur ? `blur(${titleAnim.blur}px)` : 'none' }}
+                >
+                    {title}
+                </text>
+            </g>
 
             {/* Bullets */}
             <g transform="translate(200, 220)">
                 {bullets.map((bullet, i) => {
-                    const bulletAnim = useAnimation(localTime, 1.5 + i * 0.5, 1.0);
+                    const bulletId = `slide-${slide_id}-bullet-${i}`;
+                    const bulletConfig = elementAnimations[bulletId] || { type: 'fade', duration: 1.0, delay: 1.5 + i * 0.5 };
+
+                    const bulletAnim = useDynamicAnimation(localTime, 0, bulletConfig); // Base start is 0, delay handles offset
                     const yOffset = i * 120;
+                    const isActive = activeElementId === bulletId;
 
                     return (
-                        <g key={i} opacity={bulletAnim.eased} transform={`translate(0, ${yOffset})`}>
+                        <g
+                            key={i}
+                            onClick={(e) => { e.stopPropagation(); onElementClick?.(bulletId, bullet); }}
+                            style={{ cursor: 'pointer' }}
+                            opacity={bulletAnim.opacity}
+                            transform={`translate(${bulletAnim.x}, ${yOffset + bulletAnim.y}) scale(${bulletAnim.scale})`}
+                        >
+                            {/* Selection Box */}
+                            {isActive && (
+                                <rect
+                                    x="-20"
+                                    y="-10"
+                                    width={width - 360}
+                                    height={110}
+                                    fill="none"
+                                    stroke="#22d3ee"
+                                    strokeWidth="2"
+                                    strokeDasharray="5,5"
+                                    rx="8"
+                                />
+                            )}
+
                             {/* Glowing bullet point */}
                             <circle
                                 cx="20"
@@ -60,7 +118,8 @@ export const NeonBulletsSlide: React.FC<SlideComponentProps> = ({
                                         color: theme.colors.text.primary,
                                         fontFamily: theme.fonts.body,
                                         fontSize: '36px',
-                                        lineHeight: '1.4'
+                                        lineHeight: '1.4',
+                                        filter: bulletAnim.blur ? `blur(${bulletAnim.blur}px)` : 'none'
                                     }}
                                 >
                                     {bullet}

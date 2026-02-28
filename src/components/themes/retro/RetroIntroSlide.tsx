@@ -1,5 +1,5 @@
 import React from 'react';
-import { SlideComponentProps, useAnimation } from '../types';
+import { SlideComponentProps, useDynamicAnimation } from '../types';
 
 /**
  * Retro Theme - Intro/Title Slide
@@ -11,14 +11,41 @@ export const RetroIntroSlide: React.FC<SlideComponentProps> = ({
     width,
     height,
     fontFamily,
-    theme
+    theme,
+    onElementClick,
+    activeElementId,
+    elementAnimations,
+    previewElementId,
+    previewTime
 }) => {
     const { title, narration } = slide;
-    const titleAnim = useAnimation(localTime, 0, 1.5);
     const rotation = localTime * 20; // 18s per rotation
 
+    // Calculate effective time for an element
+    const getTime = (id: string) => {
+        if (previewElementId === id && previewTime !== undefined) {
+            return previewTime;
+        }
+        return localTime;
+    };
+
+    // Title Animation
+    const titleId = 'title';
+    const titleConfig = elementAnimations?.[titleId];
+    const titleTime = getTime(titleId);
+    const titleAnim = useDynamicAnimation(titleTime, 0, titleConfig);
+
+    // Subtitle Animation
+    const subtitleId = 'subtitle';
+    const subtitleConfig = elementAnimations?.[subtitleId];
+    const subtitleTime = getTime(subtitleId);
+    const subtitleAnim = useDynamicAnimation(subtitleTime, 0.5, subtitleConfig);
+
+    // RetroIntroSlide - Title Color Logic
+
+
     return (
-        <g opacity={titleAnim.eased}>
+        <g>
             {/* Definition for Curved Sparkle */}
             <defs>
                 <path
@@ -81,34 +108,90 @@ export const RetroIntroSlide: React.FC<SlideComponentProps> = ({
             </g>
 
             {/* Main Title */}
-            <text
-                x={width / 2}
-                y={height / 2 - 20}
-                textAnchor="middle"
-                fontSize="120"
-                fill={theme.colors.text.primary}
-                fontFamily={fontFamily || theme.fonts.heading}
-                fontWeight="800"
-                style={{ textShadow: '0 1px 0 rgba(255,255,255,.35)', letterSpacing: '0.5px' }}
-            >
-                {title}
-            </text>
-
-            {/* Subtitle */}
-            {narration && (
-                <text
-                    x={width / 2}
-                    y={height / 2 + 80}
-                    textAnchor="middle"
-                    fontSize="46"
-                    fill={theme.colors.text.primary}
-                    fontFamily={fontFamily || theme.fonts.heading}
-                    opacity="0.98"
-                    style={{ textShadow: '0 1px 0 rgba(255,255,255,.35)' }}
+            {/* Main Content Area - Title & Caption */}
+            <foreignObject x={width * 0.1} y={height * 0.3} width={width * 0.8} height={height * 0.4}>
+                <div
+                    {...{ xmlns: "http://www.w3.org/1999/xhtml" } as any}
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '100%',
+                        textAlign: 'center',
+                        color: theme.colors.text.primary,
+                        fontFamily: fontFamily || theme.fonts.heading,
+                        textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
                 >
-                    Presented By Author
-                </text>
-            )}
-        </g>
+                    {/* Title Wrapper for Animation & Selection */}
+                    <div
+                        style={{
+                            opacity: titleAnim.opacity,
+                            transform: `translate(${titleAnim.x}px, ${titleAnim.y}px) scale(${titleAnim.scale})`,
+                            filter: titleAnim.blur ? `blur(${titleAnim.blur}px)` : 'none',
+                            border: activeElementId === titleId ? '2px dashed #22d3ee' : '2px solid transparent',
+                            borderRadius: '8px',
+                            padding: '10px',
+                            display: 'inline-block'
+                        }}
+                    >
+                        <h1
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (onElementClick) onElementClick(titleId, title);
+                            }}
+                            style={{
+                                fontSize: '90px',
+                                fontWeight: '800',
+                                margin: '0',
+                                lineHeight: '1.0',
+                                letterSpacing: '-2px',
+                                color: theme.colors.text.primary, // Direct color usage
+                                cursor: 'pointer',
+                                pointerEvents: 'auto'
+                            }}
+                        >
+                            {title}
+                        </h1>
+                    </div>
+
+                    {/* Caption/Subtitle Wrapper */}
+                    <div
+                        style={{
+                            marginTop: '24px',
+                            opacity: subtitleAnim.opacity,
+                            transform: `translate(${subtitleAnim.x}px, ${subtitleAnim.y}px) scale(${subtitleAnim.scale})`,
+                            filter: subtitleAnim.blur ? `blur(${subtitleAnim.blur}px)` : 'none',
+                            border: activeElementId === subtitleId ? '2px dashed #22d3ee' : '2px solid transparent',
+                            borderRadius: '8px',
+                            padding: '5px',
+                            display: 'inline-block'
+                        }}
+                    >
+                        <p
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (onElementClick) onElementClick(subtitleId, slide.subtitle || '');
+                            }}
+                            style={{
+                                fontSize: '36px',
+                                fontWeight: '500',
+                                fontStyle: 'italic',
+                                color: theme.colors.text.secondary, // Vintage Brown
+                                maxWidth: '100%',
+                                margin: 0,
+                                lineHeight: '1.3',
+                                letterSpacing: '0.5px',
+                                cursor: 'pointer',
+                                pointerEvents: 'auto',
+                                fontFamily: theme.fonts.heading
+                            }}>
+                            {slide.subtitle || 'Click to add a tagline...'}
+                        </p>
+                    </div>
+                </div>
+            </foreignObject >
+        </g >
     );
 };

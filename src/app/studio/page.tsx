@@ -2,11 +2,14 @@
 
 import { Stage } from '@/components/canvas/Stage';
 import { useStore } from '@/lib/store';
-import { Play, Pause, Download, RotateCcw, Home as HomeIcon, Loader2, Settings } from 'lucide-react';
-import Link from 'next/link';
-import { useEffect, useRef, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { FONT_OPTIONS } from '@/lib/fonts'; // Import fonts
+import { SlideList } from '@/components/studio/SlideList';
+import { AnimationPanel } from '@/components/studio/AnimationPanel';
+import { Play, Pause, Download, RotateCcw, Home as HomeIcon, Loader2, Settings, Sparkles } from 'lucide-react';
+import { useState, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+
 
 
 function StudioContent() {
@@ -26,6 +29,7 @@ function StudioContent() {
     const [exportStatus, setExportStatus] = useState<string>('');
     const [exportProgress, setExportProgress] = useState(0);
     const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
+    const [showAnimationPanel, setShowAnimationPanel] = useState(true);
 
     const handleExport = () => {
         router.push('/render');
@@ -103,6 +107,7 @@ function StudioContent() {
     const langParam = searchParams.get('language') || 'English';
     const fontParam = searchParams.get('font');
     const templateParam = searchParams.get('template') as any || 'neon';
+    const slideCountParam = searchParams.get('slideCount');
 
     useEffect(() => {
         if (fontParam) {
@@ -114,13 +119,14 @@ function StudioContent() {
         // Trigger generation if Topic is present and we are idle
         if (!script && topicParam && generationState.step === 'idle') {
             console.log("🚀 Initializing Video Generation via URL Params");
-            console.log(`   Topic: ${topicParam}, Template: ${templateParam}`);
-            generateVideo(topicParam, langParam, templateParam);
+            console.log(`   Topic: ${topicParam}, Template: ${templateParam}, Slides: ${slideCountParam}`);
+            const slides = slideCountParam ? parseInt(slideCountParam) : 5;
+            generateVideo(topicParam, langParam, templateParam, slides);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [script, topicParam, langParam, templateParam]);
+    }, [script, topicParam, langParam, templateParam, slideCountParam]);
 
-    const generateVideo = async (topic: string, language: string, template: any) => {
+    const generateVideo = async (topic: string, language: string, template: any, slideCount: number = 5) => {
         useStore.setState({ isPlaying: false }); // Stop any playback
         setGenerationState({ step: 'scripting', message: 'Dreaming up the storyboard...', progress: 0 });
         try {
@@ -128,7 +134,7 @@ function StudioContent() {
             const scriptRes = await fetch('/api/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ topic, language, slideCount: 5, suggestions })
+                body: JSON.stringify({ topic, language, slideCount, suggestions })
             });
 
             if (!scriptRes.ok) throw new Error('Failed to generate script: ' + scriptRes.statusText);
@@ -297,6 +303,15 @@ function StudioContent() {
                     </h1>
                 </div>
                 <div className="flex items-center space-x-4 text-sm text-neutral-400">
+                    <button
+                        onClick={() => setShowAnimationPanel(!showAnimationPanel)}
+                        className={`p-2 rounded-full transition-all ${showAnimationPanel ? 'bg-cyan-500/10 text-cyan-400' : 'hover:bg-neutral-800'}`}
+                        title="Animation Panel"
+                    >
+                        <Sparkles className="w-5 h-5" />
+                    </button>
+                    <div className="h-6 w-px bg-neutral-800"></div>
+
                     {/* Template Selector */}
                     <select
                         className="bg-neutral-900 border border-neutral-700 text-neutral-300 text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-cyan-500"
@@ -308,6 +323,8 @@ function StudioContent() {
                     >
                         <option value="neon">Neon Dark</option>
                         <option value="retro">Retro</option>
+                        <option value="brutalist">Brutalist</option>
+                        <option value="nanobanna">Nano Banana Pro</option>
                     </select>
 
                     {/* Export Button */}
@@ -330,27 +347,40 @@ function StudioContent() {
             </header>
 
             {/* Main Stage Area */}
-            <main id="stage-viewport" className="flex-1 flex flex-col items-center justify-center p-8 relative">
-                <Stage svgRef={svgRef} />
+            <div className="flex-1 flex overflow-hidden">
+                {/* Slide List Sidebar */}
+                <aside className="shrink-0 h-full border-r border-neutral-800 bg-neutral-900 overflow-hidden z-20">
+                    <SlideList />
+                </aside>
 
-                {/* Export/Generation Overlay */}
-                {(isExporting || generationState.step === 'audio' || generationState.step === 'rendering') && (
-                    <div className="absolute inset-x-0 bottom-0 z-50 bg-black/80 backdrop-blur p-6">
-                        <div className="max-w-4xl mx-auto space-y-2">
-                            <div className="flex justify-between text-sm text-cyan-400 font-mono">
-                                <span>{isExporting ? exportStatus : generationState.message}</span>
-                                <span>{isExporting ? exportProgress : generationState.progress}%</span>
-                            </div>
-                            <div className="w-full bg-slate-800 rounded-full h-2">
-                                <div
-                                    className="bg-cyan-500 h-2 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(34,211,238,0.5)]"
-                                    style={{ width: `${isExporting ? exportProgress : generationState.progress}%` }}
-                                />
+                <main id="stage-viewport" className="flex-1 flex flex-col items-center justify-center p-8 relative bg-neutral-950/50">
+                    <Stage svgRef={svgRef} />
+
+                    {/* Export/Generation Overlay */}
+                    {(isExporting || generationState.step === 'audio' || generationState.step === 'rendering') && (
+                        <div className="absolute inset-x-0 bottom-0 z-50 bg-black/80 backdrop-blur p-6">
+                            <div className="max-w-4xl mx-auto space-y-2">
+                                <div className="flex justify-between text-sm text-cyan-400 font-mono">
+                                    <span>{isExporting ? exportStatus : generationState.message}</span>
+                                    <span>{isExporting ? exportProgress : generationState.progress}%</span>
+                                </div>
+                                <div className="w-full bg-slate-800 rounded-full h-2">
+                                    <div
+                                        className="bg-cyan-500 h-2 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(34,211,238,0.5)]"
+                                        style={{ width: `${isExporting ? exportProgress : generationState.progress}%` }}
+                                    />
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
+                </main>
+
+                {showAnimationPanel && (
+                    <aside className="w-80 shrink-0 h-full border-l border-neutral-800 bg-neutral-900 overflow-hidden">
+                        <AnimationPanel />
+                    </aside>
                 )}
-            </main>
+            </div>
         </div>
     );
 }

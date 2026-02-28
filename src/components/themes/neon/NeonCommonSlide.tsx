@@ -1,5 +1,5 @@
 import React from 'react';
-import { SlideComponentProps, useAnimation } from '../types';
+import { SlideComponentProps, useDynamicAnimation } from '../types';
 
 /**
  * Neon Theme - Common Slide (Columns, Grids, Comparison)
@@ -11,11 +11,44 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
     width,
     height,
     fontFamily,
-    theme
+    theme,
+    onElementClick,
+    activeElementId,
+    elementAnimations = {}
 }) => {
-    const { title, content, layout } = slide;
+    const { title, content, layout, slide_id } = slide;
     const bullets = content.bullets || [];
-    const titleAnim = useAnimation(localTime, 0, 1.5);
+
+    // Title Animation
+    const titleId = `slide-${slide_id}-title`;
+    const titleConfig = elementAnimations[titleId] || { type: 'fade', duration: 1.5, delay: 0 };
+    const titleAnim = useDynamicAnimation(localTime, 0, titleConfig);
+    const isTitleActive = activeElementId === titleId;
+
+    const renderTitle = () => (
+        <g
+            onClick={(e) => { e.stopPropagation(); onElementClick?.(titleId, title); }}
+            style={{ cursor: 'pointer' }}
+            opacity={titleAnim.opacity}
+            transform={`translate(${titleAnim.x}, ${titleAnim.y}) scale(${titleAnim.scale})`}
+        >
+            {isTitleActive && (
+                <rect x={width / 2 - 400} y={40} width={800} height={100} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="5,5" rx="8" />
+            )}
+            <text
+                x={width / 2}
+                y={120}
+                textAnchor="middle"
+                fontSize="72"
+                fill={theme.colors.text.primary}
+                fontFamily={theme.fonts.heading}
+                fontWeight="bold"
+                style={{ filter: titleAnim.blur ? `blur(${titleAnim.blur}px)` : 'none' }}
+            >
+                {title}
+            </text>
+        </g>
+    );
 
     // Render 3-column layout
     if (layout === 'columns_3') {
@@ -24,24 +57,26 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
 
         return (
             <g>
-                <text
-                    x={width / 2}
-                    y={120}
-                    textAnchor="middle"
-                    fontSize="72"
-                    fill={theme.colors.text.primary}
-                    fontFamily={theme.fonts.heading}
-                    fontWeight="bold"
-                    opacity={titleAnim.eased}
-                >
-                    {title}
-                </text>
+                {renderTitle()}
 
                 <g transform="translate(200, 250)">
                     {items.map((item, i) => {
-                        const colAnim = useAnimation(localTime, 1.5 + i * 0.4, 1.0);
+                        const colId = `slide-${slide_id}-col-${i}`;
+                        const colConfig = elementAnimations[colId] || { type: 'fade', duration: 1.0, delay: 1.5 + i * 0.4 };
+                        const colAnim = useDynamicAnimation(localTime, 0, colConfig);
+                        const isActive = activeElementId === colId;
+
                         return (
-                            <g key={i} transform={`translate(${i * colWidth}, 0)`} opacity={colAnim.eased}>
+                            <g
+                                key={i}
+                                transform={`translate(${i * colWidth + colAnim.x}, ${colAnim.y}) scale(${colAnim.scale})`}
+                                opacity={colAnim.opacity}
+                                onClick={(e) => { e.stopPropagation(); onElementClick?.(colId, item); }}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                {isActive && (
+                                    <rect x="-10" y="-10" width={colWidth - 20} height={520} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="5,5" rx="16" />
+                                )}
                                 {/* Column card */}
                                 <rect
                                     width={colWidth - 40}
@@ -76,7 +111,7 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
                                 </text>
 
                                 {/* Content */}
-                                <foreignObject x="20" y="120" width={colWidth - 80} height="360">
+                                <foreignObject x="20" y="120" width={colWidth - 80} height={360}>
                                     <div
                                         {...{ xmlns: "http://www.w3.org/1999/xhtml" } as any}
                                         style={{
@@ -84,7 +119,8 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
                                             fontFamily: theme.fonts.body,
                                             fontSize: '24px',
                                             lineHeight: '1.5',
-                                            textAlign: 'center'
+                                            textAlign: 'center',
+                                            filter: colAnim.blur ? `blur(${colAnim.blur}px)` : 'none'
                                         }}
                                     >
                                         {item}
@@ -106,31 +142,28 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
 
         return (
             <g>
-                <text
-                    x={width / 2}
-                    y={100}
-                    textAnchor="middle"
-                    fontSize="64"
-                    fill={theme.colors.text.primary}
-                    fontFamily={theme.fonts.heading}
-                    fontWeight="bold"
-                    opacity={titleAnim.eased}
-                >
-                    {title}
-                </text>
+                {renderTitle()}
 
                 <g transform="translate(200, 180)">
                     {items.map((item, i) => {
-                        const cardAnim = useAnimation(localTime, 1.5 + i * 0.3, 1.0);
+                        const cardId = `slide-${slide_id}-card-${i}`;
+                        const cardConfig = elementAnimations[cardId] || { type: 'fade', duration: 1.0, delay: 1.5 + i * 0.3 };
+                        const cardAnim = useDynamicAnimation(localTime, 0, cardConfig);
                         const row = Math.floor(i / 2);
                         const col = i % 2;
+                        const isActive = activeElementId === cardId;
 
                         return (
                             <g
                                 key={i}
-                                transform={`translate(${col * (cardWidth + 50)}, ${row * (cardHeight + 40)})`}
-                                opacity={cardAnim.eased}
+                                transform={`translate(${col * (cardWidth + 50) + cardAnim.x}, ${row * (cardHeight + 40) + cardAnim.y}) scale(${cardAnim.scale})`}
+                                opacity={cardAnim.opacity}
+                                onClick={(e) => { e.stopPropagation(); onElementClick?.(cardId, item); }}
+                                style={{ cursor: 'pointer' }}
                             >
+                                {isActive && (
+                                    <rect x="-10" y="-10" width={cardWidth + 20} height={cardHeight + 20} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="5,5" rx="16" />
+                                )}
                                 <rect
                                     width={cardWidth}
                                     height={cardHeight}
@@ -147,7 +180,8 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
                                             color: theme.colors.text.primary,
                                             fontFamily: theme.fonts.body,
                                             fontSize: '24px',
-                                            lineHeight: '1.5'
+                                            lineHeight: '1.5',
+                                            filter: cardAnim.blur ? `blur(${cardAnim.blur}px)` : 'none'
                                         }}
                                     >
                                         {item}
@@ -167,23 +201,29 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
         const rightItems = bullets.slice(Math.ceil(bullets.length / 2));
         const cardWidth = (width - 300) / 2;
 
+        const leftId = `slide-${slide_id}-comp-left`;
+        const rightId = `slide-${slide_id}-comp-right`;
+
+        const leftConfig = elementAnimations[leftId] || { type: 'fade', duration: 1.0, delay: 1.5 };
+        const rightConfig = elementAnimations[rightId] || { type: 'fade', duration: 1.0, delay: 2.0 };
+
+        const leftAnim = useDynamicAnimation(localTime, 0, leftConfig);
+        const rightAnim = useDynamicAnimation(localTime, 0, rightConfig);
+
         return (
             <g>
-                <text
-                    x={width / 2}
-                    y={100}
-                    textAnchor="middle"
-                    fontSize="64"
-                    fill={theme.colors.text.primary}
-                    fontFamily={theme.fonts.heading}
-                    fontWeight="bold"
-                    opacity={titleAnim.eased}
-                >
-                    {title}
-                </text>
+                {renderTitle()}
 
                 {/* Left card */}
-                <g transform="translate(100, 180)" opacity={useAnimation(localTime, 1.5, 1.0).eased}>
+                <g
+                    transform={`translate(${100 + leftAnim.x}, ${180 + leftAnim.y}) scale(${leftAnim.scale})`}
+                    opacity={leftAnim.opacity}
+                    onClick={(e) => { e.stopPropagation(); onElementClick?.(leftId, 'Option A'); }}
+                    style={{ cursor: 'pointer' }}
+                >
+                    {activeElementId === leftId && (
+                        <rect x="-10" y="-10" width={cardWidth + 20} height={620} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="5,5" rx="16" />
+                    )}
                     <rect
                         width={cardWidth}
                         height={600}
@@ -210,7 +250,8 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
                                 fontFamily: theme.fonts.body,
                                 fontSize: '24px',
                                 lineHeight: '2',
-                                paddingLeft: '20px'
+                                paddingLeft: '20px',
+                                filter: leftAnim.blur ? `blur(${leftAnim.blur}px)` : 'none'
                             }}>
                                 {leftItems.map((item, i) => (
                                     <li key={i}>{item}</li>
@@ -221,7 +262,15 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
                 </g>
 
                 {/* Right card */}
-                <g transform={`translate(${100 + cardWidth + 50}, 180)`} opacity={useAnimation(localTime, 2.0, 1.0).eased}>
+                <g
+                    transform={`translate(${100 + cardWidth + 50 + rightAnim.x}, ${180 + rightAnim.y}) scale(${rightAnim.scale})`}
+                    opacity={rightAnim.opacity}
+                    onClick={(e) => { e.stopPropagation(); onElementClick?.(rightId, 'Option B'); }}
+                    style={{ cursor: 'pointer' }}
+                >
+                    {activeElementId === rightId && (
+                        <rect x="-10" y="-10" width={cardWidth + 20} height={620} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="5,5" rx="16" />
+                    )}
                     <rect
                         width={cardWidth}
                         height={600}
@@ -248,7 +297,8 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
                                 fontFamily: theme.fonts.body,
                                 fontSize: '24px',
                                 lineHeight: '2',
-                                paddingLeft: '20px'
+                                paddingLeft: '20px',
+                                filter: rightAnim.blur ? `blur(${rightAnim.blur}px)` : 'none'
                             }}>
                                 {rightItems.map((item, i) => (
                                     <li key={i}>{item}</li>
@@ -264,18 +314,7 @@ export const NeonCommonSlide: React.FC<SlideComponentProps> = ({
     // Default fallback - simple content display
     return (
         <g>
-            <text
-                x={width / 2}
-                y={120}
-                textAnchor="middle"
-                fontSize="72"
-                fill={theme.colors.text.primary}
-                fontFamily={theme.fonts.heading}
-                fontWeight="bold"
-                opacity={titleAnim.eased}
-            >
-                {title}
-            </text>
+            {renderTitle()}
 
             <foreignObject x="200" y="200" width={width - 400} height={height - 300}>
                 <div

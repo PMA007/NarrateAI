@@ -12,6 +12,8 @@ interface SequenceProps {
     fontFamily: string;
     fontUrl: string;
     fontCss: string; // Recieve raw CSS
+    elementAnimations?: Record<string, import('@/lib/store').AnimationConfig>;
+    elementStyles?: Record<string, { fontFamily?: string; fontSize?: number; color?: string }>;
 }
 
 export const RetroSequence: React.FC<SequenceProps> = ({
@@ -22,7 +24,9 @@ export const RetroSequence: React.FC<SequenceProps> = ({
     height,
     fontFamily,
     fontUrl,
-    fontCss
+    fontCss,
+    elementAnimations,
+    elementStyles
 }) => {
     return (
         <div style={{ width, height, position: 'relative', overflow: 'hidden' }}>
@@ -56,6 +60,8 @@ export const RetroSequence: React.FC<SequenceProps> = ({
                     height={height}
                     fontFamily={fontFamily}
                     template="retro" // STRICTLY RETRO
+                    elementAnimations={elementAnimations}
+                    elementStyles={elementStyles}
                 />
             </svg>
         </div>

@@ -7,6 +7,7 @@ import { SlideRenderer } from './SlideRenderer';
 import { FONT_OPTIONS } from '@/lib/fonts';
 import { NeonTemplate } from '@/components/templates/NeonTemplate';
 import { RetroTemplate } from '@/components/templates/RetroTemplate';
+import { NanoBannaTemplate } from '@/components/templates/NanoBannaTemplate';
 
 const ASPECT_RATIO = 16 / 9;
 const WIDTH = 1920;
@@ -121,7 +122,11 @@ export function Stage({
     const localTime = activeEntry ? currentTime - activeEntry.startTime : 0;
 
     // Simplified template selection: only neon and retro
-    const Template = script?.template === 'retro' ? RetroTemplate : NeonTemplate;
+    const Template: React.ComponentType<{ localTime: number }> =
+        script?.template === 'retro' ? RetroTemplate :
+            script?.template === 'nanobanna' ? NanoBannaTemplate :
+                script?.template === 'brutalist' ? NeonTemplate : // Brutalist uses Neon bg for now or similar
+                    NeonTemplate;
 
     return (
         <div className="relative w-full aspect-video bg-neutral-950 rounded-lg overflow-hidden shadow-2xl border border-neutral-800">
@@ -177,7 +182,7 @@ export function Stage({
                 {/* Remove rect background as Template handles it */}
 
                 {activeSlide ? (
-                    <g style={{ pointerEvents: 'auto' }}>
+                    <g style={{ pointerEvents: 'all' }}>
                         <SlideRenderer
                             key={activeSlide.slide_id}
                             slide={activeSlide}
@@ -187,6 +192,32 @@ export function Stage({
                             height={HEIGHT}
                             fontFamily={fontConfig.family}
                             template={script?.template || 'neon'}
+                            // START FIX: Map global keys (slide-0-title) to local keys (title)
+                            elementAnimations={
+                                Object.entries(store.elementAnimations)
+                                    .reduce((acc, [key, anim]) => {
+                                        const currentIndex = script?.slides.indexOf(activeSlide) ?? -1;
+                                        const prefix = `slide-${currentIndex}-`;
+                                        if (key.startsWith(prefix)) {
+                                            acc[key.replace(prefix, '')] = anim;
+                                        }
+                                        return acc;
+                                    }, {} as any)
+                            }
+                            elementStyles={
+                                Object.entries(store.elementStyles)
+                                    .reduce((acc, [key, style]) => {
+                                        const currentIndex = script?.slides.indexOf(activeSlide) ?? -1;
+                                        const prefix = `slide-${currentIndex}-`;
+                                        if (key.startsWith(prefix)) {
+                                            acc[key.replace(prefix, '')] = style;
+                                        }
+                                        return acc;
+                                    }, {} as any)
+                            }
+                            // END FIX
+                            onElementClick={(id) => store.setActiveElement(id)}
+                            activeElementId={store.activeElementId}
                         />
                     </g>
                 ) : (
@@ -194,6 +225,7 @@ export function Stage({
                         {script ? "The End" : "Ready to Generate"}
                     </text>
                 )}
+
             </svg>
         </div>
     );

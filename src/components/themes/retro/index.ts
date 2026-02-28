@@ -24,5 +24,7 @@ export const RetroSlideRegistry: ThemeSlideRegistry = {
     bullets: RetroBulletsSlide,
     common: RetroCommonSlide,
     graph: RetroGraphSlide,
+    table: RetroCommonSlide, // Fallback
+    coding: RetroCommonSlide, // Fallback
     thankyou: RetroThankYouSlide,
 };

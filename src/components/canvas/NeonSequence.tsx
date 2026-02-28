@@ -12,6 +12,8 @@ interface SequenceProps {
     fontFamily: string;
     fontUrl: string;
     fontCss: string;
+    elementAnimations?: Record<string, import('@/lib/store').AnimationConfig>;
+    elementStyles?: Record<string, { fontFamily?: string; fontSize?: number; color?: string }>;
 }
 
 export const NeonSequence: React.FC<SequenceProps> = ({
@@ -22,7 +24,9 @@ export const NeonSequence: React.FC<SequenceProps> = ({
     height,
     fontFamily,
     fontUrl,
-    fontCss
+    fontCss,
+    elementAnimations,
+    elementStyles
 }) => {
     return (
         <div style={{ width, height, position: 'relative', overflow: 'hidden', background: '#020617' }}>
@@ -60,6 +64,8 @@ export const NeonSequence: React.FC<SequenceProps> = ({
                     height={height}
                     fontFamily={fontFamily}
                     template="neon" // STRICTLY NEON
+                    elementAnimations={elementAnimations}
+                    elementStyles={elementStyles}
                 />
             </svg>
         </div>

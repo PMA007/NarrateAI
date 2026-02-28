@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
         const finalState = await appGraph.invoke({
             topic,
             language: language || 'English',
-            slideCount: slideCount || 5,
+            slideCount: slideCount || 8,
             userSuggestions: suggestions || '', // Pass user suggestions
             classification: 'simple', // Initial value
             genre: 'general' // Initial value

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>About JNTU-GV</title>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <style>
+        @font-face {
+            font-family: 'Neue Machina';
+            src: url("https://www.genspark.ai/image_placeholder.png") format('woff2');
+            font-weight: 700;
+            font-style: normal;
+        }
+
+        @font-face {
+            font-family: 'Neue Machina';
+            src: url("https://www.genspark.ai/image_placeholder.png") format('woff2');
+            font-weight: 400;
+            font-style: normal;
+        }
+
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #CBF400;
+            color: #0F0F0F;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            width: 1280px;
+            height: 720px;
+            margin: 0 auto;
+            padding: 30px 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            color: #0F0F0F;
+            font-weight: 600;
+            font-size: 16px;
+            letter-spacing: 0.5px;
+        }
+
+        .logo i {
+            margin-right: 10px;
+            font-size: 16px;
+        }
+
+        .date {
+            color: #0F0F0F;
+            font-size: 16px;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            margin-top: 10px;
+        }
+
+        .main-title {
+            font-family: 'Neue Machina', sans-serif;
+            color: #0F0F0F;
+            font-size: 120px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            margin-top: 10px;
+            line-height: 0.9;
+        }
+
+        .abstract-text {
+            max-width: 900px;
+            text-align: left;
+            line-height: 1.6;
+            font-size: 18px;
+            margin: 0;
+            color: #0F0F0F;
+            font-weight: 500;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 40px;
+        }
+
+        .info-item {
+            background-color: rgba(15, 15, 15, 0.05);
+            padding: 15px;
+            border-left: 3px solid #0F0F0F;
+        }
+
+        .info-label {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 5px;
+            display: block;
+            text-transform: uppercase;
+        }
+
+        .info-value {
+            font-size: 15px;
+            line-height: 1.4;
+        }
+
+        .footer-box {
+            background-color: #DDDDDD;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 30px;
+            color: #0F0F0F;
+            border-radius: 2px;
+        }
+
+        .author {
+            display: flex;
+            align-items: center;
+            font-weight: 700;
+            font-size: 18px;
+            color: #0F0F0F;
+            font-family: 'Neue Machina', sans-serif;
+        }
+
+        .author i {
+            margin-right: 15px;
+            font-size: 16px;
+            transform: rotate(45deg);
+        }
+
+        .footer-text {
+            max-width: 600px;
+            font-size: 15px;
+            line-height: 1.4;
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <i class="fas fa-university"></i>
+                JNTU-GV
+            </div>
+            <div class="date">2026-01-24</div>
+        </div>
+        <div class="main-content">
+            <h1 class="main-title">About<br />JNTU-GV</h1>
+            <div class="abstract-text">
+                <p>Sculpting minds through innovative teaching, cutting-edge research, and vibrant community engagement.
+                    Established in 2022, Jawaharlal Nehru Technological University-Gurajada, Vizianagaram serves as a
+                    beacon of engineering excellence for the North Andhra region, honoring the legacy of Gurajada
+                    Apparao.</p>
+            </div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Establishment</span>
+                    <div class="info-value">
+                        <p>January 12, 2022<br />State Public University</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Location</span>
+                    <div class="info-value">
+                        <p>Dwarapudi, Vizianagaram<br />~80 Acres Urban Campus</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Focus Areas</span>
+                    <div class="info-value">
+                        <p>Engineering, Pharmacy,<br />Management</p>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-box">
+                <div class="author">
+                    <i class="fas fa-certificate"></i>
+                    ACCREDITATION &amp; RECOGNITION
+                </div>
+                <div class="footer-text">
+                    <p>Recognized by UGC and NAAC. ISO Certified (2022). Serving Visakhapatnam, Vizianagaram, and
+                        Srikakulam districts.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Thank You - JNTU-GV</title>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <style>
+        @font-face {
+            font-family: 'Neue Machina';
+            src: url("https://www.genspark.ai/image_placeholder.png") format('woff2');
+            font-weight: 700;
+            font-style: normal;
+        }
+
+        @font-face {
+            font-family: 'Neue Machina';
+            src: url("https://www.genspark.ai/image_placeholder.png") format('woff2');
+            font-weight: 400;
+            font-style: normal;
+        }
+
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #0F0F0F;
+            color: #DDDDDD;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            width: 1280px;
+            height: 720px;
+            margin: 0 auto;
+            padding: 30px 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+            position: relative;
+            z-index: 1;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* Abstract architectural background */
+            background-image: url("https://page.gensparksite.com/slides_images/04dc73efb874289b11ba5e9196727c13.jpg");
+            background-size: cover;
+            background-position: center;
+            opacity: 0.3;
+            z-index: -1;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            color: #CBF400;
+            font-weight: 600;
+            font-size: 16px;
+            letter-spacing: 0.5px;
+        }
+
+        .logo i {
+            margin-right: 10px;
+            font-size: 16px;
+        }
+
+        .date {
+            color: #CBF400;
+            font-size: 16px;
+        }
+
+        .content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        .thank-you-title {
+            font-family: 'Neue Machina', sans-serif;
+            color: #CBF400;
+            font-size: 150px;
+            font-weight: 700;
+            line-height: 0.9;
+            margin: 0;
+            text-align: center;
+            letter-spacing: -2px;
+            text-shadow: 0 0 20px rgba(15, 15, 15, 0.8);
+        }
+
+        .presenter-box {
+            background-color: #CBF400;
+            color: #0F0F0F;
+            padding: 15px 40px;
+            font-size: 20px;
+            margin-top: 40px;
+            font-weight: 600;
+            font-family: 'Neue Machina', sans-serif;
+            box-shadow: 0 0 25px rgba(203, 244, 0, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            color: #CBF400;
+            font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
+            position: relative;
+            z-index: 2;
+            text-shadow: 0 0 10px rgba(15, 15, 15, 0.9);
+            border-top: 1px solid rgba(203, 244, 0, 0.3);
+            padding-top: 20px;
+        }
+
+        .footer div {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .footer i {
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <i class="fas fa-university"></i>
+                JNTU-GV VIZIANAGARAM
+            </div>
+            <div class="date">January 24, 2026</div>
+        </div>
+        <div class="content">
+            <h1 class="thank-you-title">Thank<br />You</h1>
+            <div class="presenter-box">Jawaharlal Nehru Technological University - Gurajada</div>
+        </div>
+        <div class="footer">
+            <div>
+                <i class="fas fa-map-marker-alt"></i>
+                Dwarapudi, Vizianagaram, AP - 535003
+            </div>
+            <div>
+                <i class="fas fa-globe"></i>
+                www.jntugv.edu.in
+            </div>
+            <div>
+                <i class="fas fa-envelope"></i>
+                registrar@jntugv.edu.in
+            </div>
+            <div>
+                <i class="fas fa-building"></i>
+                State University
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

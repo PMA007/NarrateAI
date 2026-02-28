@@ -14,7 +14,9 @@ export const NeonIntroSlide: React.FC<SlideComponentProps> = ({
     fontFamily,
     theme,
     onElementClick,
-    elementStyles = {}
+    elementStyles = {},
+    activeElementId,
+    ...props
 }) => {
     const { title, content, narration } = slide;
     const getStyle = (id: string) => elementStyles[id] || {};
@@ -40,6 +42,10 @@ export const NeonIntroSlide: React.FC<SlideComponentProps> = ({
                         title={title}
                         subtitle={narration || content.bullets?.[0]}
                         localTime={localTime}
+                        activeElementId={activeElementId}
+                        onElementClick={onElementClick}
+                        elementAnimations={props.elementAnimations}
+                        slideId={slide.slide_id}
                     />
                 </div>
             </foreignObject>

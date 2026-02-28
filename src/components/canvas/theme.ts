@@ -1,4 +1,4 @@
-export type ThemeType = 'neon' | 'retro';
+export type ThemeType = 'neon' | 'retro' | 'brutalist' | 'nanobanna';
 
 export interface ThemeConfig {
     colors: {
@@ -8,15 +8,19 @@ export interface ThemeConfig {
         text: {
             primary: string;
             secondary: string;
+            accent?: string; // Optional accent
         };
         card: {
             background: string;
             border: string;
         };
+        grid?: string; // Optional grid color
+        surface?: string; // Optional surface color
     };
     fonts: {
         heading: string;
         body: string;
+        mono?: string; // Optional mono font
     };
     shapes: {
         radius: string;
@@ -66,6 +70,54 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
         },
         shapes: {
             radius: '16px',
+        },
+    },
+    'brutalist': {
+        colors: {
+            primary: '#CBF400',      // Acid Green
+            secondary: '#0F0F0F',    // Dark Grey
+            background: '#0F0F0F',   // Dark Background
+            text: {
+                primary: '#CBF400',  // Acid Green (Headings)
+                secondary: '#DDDDDD', // Off-white (Body)
+            },
+            card: {
+                background: 'rgba(15, 15, 15, 0.05)',
+                border: '#0F0F0F',
+            },
+        },
+        fonts: {
+            heading: '"Space Grotesk", sans-serif',
+            body: '"Roboto Mono", monospace',
+        },
+        shapes: {
+            radius: '2px', // Sharp edges
+        },
+    },
+    'nanobanna': {
+        colors: {
+            primary: '#FFD700',      // Banana Yellow
+            secondary: '#FFFFFF',    // White
+            background: '#0F0F11',   // Deep Black
+            surface: '#1E1E23',      // Dark Grey Surface
+            grid: 'rgba(255, 255, 255, 0.05)',
+            text: {
+                primary: '#FFFFFF',
+                secondary: '#CCCCCC',
+                accent: '#FFD700'
+            },
+            card: {
+                background: '#1E1E23',
+                border: '#333333',
+            },
+        },
+        fonts: {
+            heading: '"Inter", sans-serif',
+            body: '"Inter", sans-serif',
+            mono: '"Fira Code", monospace'
+        },
+        shapes: {
+            radius: '10px',
         },
     },
 };

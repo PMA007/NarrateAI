@@ -24,5 +24,7 @@ export const NeonSlideRegistry: ThemeSlideRegistry = {
     bullets: NeonBulletsSlide,
     common: NeonCommonSlide,
     graph: NeonGraphSlide,
+    table: NeonCommonSlide, // Fallback for table layout
+    coding: NeonCommonSlide, // Fallback for coding
     thankyou: NeonThankYouSlide,
 };

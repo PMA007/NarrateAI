@@ -6,21 +6,32 @@ export interface SlideContent {
     bullets?: string[];
     chart_data?: { labels: string[]; values: number[]; label?: string };
     flow_steps?: string[];
+    table_data?: { headers: string[]; rows: string[][] };
+    code_snippet?: string; // New: For coding explanations
+    highlight_lines?: number[]; // New: For highlighting specific lines
 }
 
 export interface Slide {
     slide_id: number;
     title: string;
-    layout: 'title' | 'text_features' | 'chart_bar' | 'chart_line' | 'process_flow' | 'columns_3' | 'grid_cards' | 'comparison';
+    subtitle?: string; // Tagline for intro slides
+    layout: 'title' | 'text_features' | 'chart_bar' | 'chart_line' | 'process_flow' | 'columns_3' | 'grid_cards' | 'comparison' | 'table' | 'coding';
     content: SlideContent;
     narration: string;
     duration?: number; // Calculated after TTS
     startTime?: number; // Calculated timeline position
 }
 
+export interface AnimationConfig {
+    type: 'none' | 'fade' | 'slide_up' | 'slide_down' | 'scale_in' | 'typewriter' | 'blur_in';
+    duration: number; // in seconds
+    delay: number; // in seconds, relative to slide start or previous element
+    ease?: 'linear' | 'easeOut' | 'easeInOut' | 'steps';
+}
+
 export interface Script {
     slides: Slide[];
-    template?: 'neon' | 'retro';
+    template?: 'neon' | 'retro' | 'brutalist' | 'nanobanna';
 }
 
 interface AppState {
@@ -57,6 +68,10 @@ interface AppState {
     selectedVoice: string;
     setVoice: (voice: string) => void;
 
+    // Preloaded Assets (Blob URLs)
+    preloadedAssets: Record<string, string>;
+    setPreloadedAssets: (assets: Record<string, string>) => void;
+
     // Agentic AI User Suggestions
     suggestions: string;
     setSuggestions: (suggestions: string) => void;
@@ -66,6 +81,8 @@ interface AppState {
     setActiveElement: (id: string | null) => void;
     elementStyles: Record<string, { fontFamily?: string; fontSize?: number, color?: string }>;
     setElementStyle: (id: string, style: { fontFamily?: string; fontSize?: number, color?: string }) => void;
+    elementAnimations: Record<string, AnimationConfig>;
+    setElementAnimation: (id: string, animation: AnimationConfig) => void;
     updateSlide: (slideId: number, updates: Partial<Slide>) => void;
 
     // Actions
@@ -75,6 +92,10 @@ interface AppState {
     seek: (time: number) => void;
     setCurrentTime: (time: number) => void;
     reset: () => void;
+
+    // Animation Preview
+    previewTrigger: number;
+    triggerPreview: () => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -86,6 +107,7 @@ export const useStore = create<AppState>((set) => ({
     selectedFont: 'Modern', // Default
     activeElementId: null,
     elementStyles: {},
+    elementAnimations: {},
 
     generationState: { step: 'idle', progress: 0, message: '' },
     audioStatus: {},
@@ -133,6 +155,13 @@ export const useStore = create<AppState>((set) => ({
         }
     })),
 
+    setElementAnimation: (id, animation) => set((state) => ({
+        elementAnimations: {
+            ...state.elementAnimations,
+            [id]: animation
+        }
+    })),
+
     setAudioUrl: (slideId, url, duration) => set((state) => {
         // Also update the slide duration in the script!
         // This is a bit tricky with nested state updates, but necessary for the timeline.
@@ -171,4 +200,8 @@ export const useStore = create<AppState>((set) => ({
         activeElementId: null,
         elementStyles: {}
     }),
+    triggerPreview: () => set({ previewTrigger: Date.now() }),
+    previewTrigger: 0,
+    preloadedAssets: {},
+    setPreloadedAssets: (assets) => set({ preloadedAssets: assets }),
 }));

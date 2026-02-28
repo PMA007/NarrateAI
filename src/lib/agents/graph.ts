@@ -22,7 +22,7 @@ const AgentState = Annotation.Root({
 // Initialize LLM (Gemini 2.5 Flash)
 const llm = new ChatGoogleGenerativeAI({
     model: "gemini-2.5-flash",
-    maxOutputTokens: 8192,
+    maxOutputTokens: 10000,
     apiKey: process.env.GEMINI_API_KEY
 });
 
@@ -122,9 +122,23 @@ async function generatorNode(state: typeof AgentState.State): Promise<Partial<ty
 
 // Helper: Clean JSON markdown
 function extractJson(text: string): string {
+    let jsonString = text.trim();
+
+    // 1. Try to find markdown block
     const match = text.match(/```json([\s\S]*?)```/);
-    if (match) return match[1];
-    return text;
+    if (match) {
+        jsonString = match[1].trim();
+    }
+
+    // 2. If no markdown, or inside the markdown, ensure we just get the object
+    const firstOpen = jsonString.indexOf('{');
+    const lastClose = jsonString.lastIndexOf('}');
+
+    if (firstOpen !== -1 && lastClose !== -1) {
+        return jsonString.substring(firstOpen, lastClose + 1);
+    }
+
+    return jsonString;
 }
 
 // --- Graph Definition ---

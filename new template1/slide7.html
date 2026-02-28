@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+
+<html data-theme="light" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Campus &amp; Facilities - JNTU-GV</title>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <style>
+        @font-face {
+            font-family: 'Neue Machina';
+            src: url("https://www.genspark.ai/image_placeholder.png") format('opentype');
+            font-weight: 700;
+            font-style: normal;
+        }
+
+        @font-face {
+            font-family: 'Neue Machina';
+            src: url("https://www.genspark.ai/image_placeholder.png") format('opentype');
+            font-weight: 400;
+            font-style: normal;
+        }
+
+        body {
+            font-family: 'Roboto Mono', monospace;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-color: #0F0F0F;
+        }
+
+        .container {
+            width: 1280px;
+            height: 720px;
+            /* Fixed height per requirements */
+            margin: 0 auto;
+            display: flex;
+            box-sizing: border-box;
+        }
+
+        .left-section {
+            width: 45%;
+            background-color: #CBF400;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            opacity: 0.9;
+            /* Slight opacity blend with background */
+        }
+
+        /* Overlay to ensure text readability if needed, though mostly for style here */
+        .image-container::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 15, 15, 0.1);
+        }
+
+        .right-section {
+            width: 55%;
+            background-color: #0F0F0F;
+            padding: 40px 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            width: 100%;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            color: #CBF400;
+            font-weight: 600;
+            font-size: 16px;
+            letter-spacing: 0.5px;
+        }
+
+        .logo i {
+            margin-right: 10px;
+            font-size: 16px;
+        }
+
+        .date {
+            color: #CBF400;
+            font-size: 16px;
+        }
+
+        .main-title {
+            font-family: 'Neue Machina', sans-serif;
+            color: #CBF400;
+            font-size: 90px;
+            /* Reduced from 160px to fit content */
+            font-weight: 700;
+            line-height: 1.0;
+            margin: 0;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+        }
+
+        .description-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .description-item {
+            color: #DDDDDD;
+            font-size: 16px;
+            line-height: 1.6;
+            max-width: 650px;
+            border-left: 2px solid #CBF400;
+            padding-left: 20px;
+        }
+
+        .highlight {
+            color: #CBF400;
+            font-weight: 700;
+            display: block;
+            margin-bottom: 5px;
+            font-family: 'Neue Machina', sans-serif;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="left-section">
+            <div class="image-container">
+                <!-- Using the library/facility image from search results -->
+                <img alt="JNTU-GV Library and Campus Facilities"
+                    src="https://page.gensparksite.com/slides_images/1280eeaa058ce62aac47b4827e07784e.webp" />
+            </div>
+        </div>
+        <div class="right-section">
+            <div class="header">
+                <div class="logo">
+                    <i class="fas fa-university"></i>
+                    JNTU-GV
+                </div>
+                <div class="date">2026-01-24</div>
+            </div>
+            <h1 class="main-title">Campus &amp;<br />Facilities</h1>
+            <div class="description-container">
+                <div class="description-item">
+                    <span class="highlight">Campus Overview</span>
+                    <p style="margin: 0;">Spread across <strong>~80 acres</strong> in an urban setting at Dwarapudi,
+                        Vizianagaram, the campus offers a vibrant academic atmosphere blending modern infrastructure
+                        with greenery.</p>
+                </div>
+                <div class="description-item">
+                    <span class="highlight">Core Academic Infrastructure</span>
+                    <p style="margin: 0;">Features a Central Library with extensive resources, e-learning classrooms,
+                        specialized department laboratories, a digital auditorium, and campus-wide Wi-Fi connectivity.
+                    </p>
+                </div>
+                <div class="description-item">
+                    <span class="highlight">Student Amenities</span>
+                    <p style="margin: 0;">Comprehensive support facilities including hostels, sports &amp; fitness
+                        centers, canteen, banking/ATM services, dispensary, and on-campus staff quarters.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

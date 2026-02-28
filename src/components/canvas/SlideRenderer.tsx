@@ -4,6 +4,8 @@ import { THEMES, ThemeType } from './theme';
 import { getSlideCategory, SlideComponentProps } from '@/components/themes/types';
 import { NeonSlideRegistry } from '@/components/themes/neon';
 import { RetroSlideRegistry } from '@/components/themes/retro';
+import { BrutalistSlideRegistry } from '@/components/themes/brutalist';
+import { nanobannaSlides } from '@/components/themes/nanobanna';
 
 interface SlideRendererProps {
     slide: SlideType;
@@ -13,8 +15,12 @@ interface SlideRendererProps {
     height: number;
     fontFamily: string;
     template?: ThemeType;
+    activeElementId?: string | null;
     onElementClick?: (elementId: string, value: string) => void;
     elementStyles?: Record<string, { fontFamily?: string; fontSize?: number; color?: string }>;
+    elementAnimations?: Record<string, import('@/lib/store').AnimationConfig>;
+    previewElementId?: string | null;
+    previewTime?: number;
 }
 
 /**
@@ -30,7 +36,11 @@ export function SlideRenderer({
     fontFamily,
     template = 'neon',
     onElementClick,
-    elementStyles = {}
+    elementStyles = {},
+    activeElementId,
+    elementAnimations = {},
+    previewElementId,
+    previewTime
 }: SlideRendererProps) {
     // Get the theme configuration
     const theme = THEMES[template] || THEMES['neon'];
@@ -39,7 +49,11 @@ export function SlideRenderer({
     const category = getSlideCategory(slide, index);
 
     // Select the appropriate registry based on theme
-    const registry = template === 'retro' ? RetroSlideRegistry : NeonSlideRegistry;
+    const registry =
+        template === 'retro' ? RetroSlideRegistry :
+            template === 'brutalist' ? BrutalistSlideRegistry :
+                template === 'nanobanna' ? nanobannaSlides :
+                    NeonSlideRegistry;
 
     // Get the slide component for this category
     const SlideComponent = registry[category];
@@ -58,8 +72,12 @@ export function SlideRenderer({
         height,
         fontFamily,
         theme,
+        activeElementId,
         onElementClick,
-        elementStyles
+        elementStyles,
+        elementAnimations,
+        previewElementId,
+        previewTime
     };
 
     return <SlideComponent {...props} />;
