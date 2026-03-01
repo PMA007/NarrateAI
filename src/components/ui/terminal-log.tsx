@@ -6,9 +6,10 @@ import { motion } from 'framer-motion';
 interface TerminalLogProps {
     logs: string[];
     thought: string;
+    title?: string;
 }
 
-export function TerminalLog({ logs, thought }: TerminalLogProps) {
+export function TerminalLog({ logs, thought, title }: TerminalLogProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom
@@ -30,7 +31,7 @@ export function TerminalLog({ logs, thought }: TerminalLogProps) {
                         <div className="w-2.5 h-2.5 rounded-full bg-green-500/50" />
                     </div>
                     <span className="text-slate-500 ml-2 text-[10px] font-semibold tracking-wider uppercase">
-                        Narrate.System.Log
+                        {title ?? 'Narrate.System.Log'}
                     </span>
                 </div>
                 <div className="text-[10px] text-slate-600">

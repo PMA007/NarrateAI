@@ -6,7 +6,7 @@ import { useStore } from '@/lib/store';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, ArrowRight, Check, Sparkles, AlertCircle, Wand2, Search, LibraryBig, Palette, Mic, CheckCircle, Wrench, GitMerge, X, ChevronRight } from 'lucide-react';
 import { NarrateLogo } from '@/components/ui/narrate-logo';
-import { AgentCard } from '@/components/ui/agent-card';
+import { AgentFlowGraph } from '@/components/ui/agent-graph';
 import { TerminalLog } from '@/components/ui/terminal-log';
 
 // Define Wizard Steps
@@ -653,138 +653,54 @@ export default function Home() {
                                             <span className="text-xs font-mono">Agents Working</span>
                                         </div>
                                     )}
-                                    <p className="text-[10px] text-slate-600">Click a node to view its log</p>
+                                    <p className="text-[10px] text-slate-600">Click a node · view its log</p>
                                 </div>
 
-                                {/* ── FLOW GRAPH ────────────────────────────────── */}
-                                <div className="relative">
-                                    {/* Scrollable horizontal flow */}
-                                    <div className="flex items-start gap-0 overflow-x-auto pb-1">
-                                        {ALL_AGENTS.map((agent, idx) => {
-                                            const isActive = activeAgent === agent.id;
-                                            const isDone = completedAgents.includes(agent.id);
-                                            const isSelected = selectedAgent === agent.id;
-                                            const Icon = agent.icon;
+                                {/* ── Two-panel: [Graph] + [Log] ── */}
+                                <div className="grid grid-cols-5 gap-3" style={{ minHeight: '360px' }}>
 
-                                            // per-agent accent colour (inline since Tailwind JIT can't resolve dynamic)
-                                            const ACCENT: Record<string, string> = {
-                                                blue: '#60a5fa', indigo: '#818cf8', purple: '#c084fc',
-                                                pink: '#f472b6', emerald: '#34d399', orange: '#fb923c', cyan: '#22d3ee'
-                                            };
-                                            const accent = ACCENT[agent.color] ?? '#94a3b8';
-
-                                            return (
-                                                <div key={agent.id} className="flex items-center">
-                                                    {/* Node */}
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedAgent(agent.id);
-                                                            if (agentOutputs[agent.id]) setInspectedAgent(agent.id);
-                                                        }}
-                                                        className="flex flex-col items-center gap-1.5 group relative"
-                                                        title={`${agent.name} — click to view log`}
-                                                    >
-                                                        {/* Circle */}
-                                                        <div
-                                                            className="w-11 h-11 rounded-full flex items-center justify-center border-2 transition-all duration-500 relative"
-                                                            style={{
-                                                                borderColor: isActive || isDone ? accent : '#334155',
-                                                                background: isActive ? `${accent}18` : isDone ? `${accent}10` : '#0f172a',
-                                                                boxShadow: isActive ? `0 0 18px 4px ${accent}40` : isSelected && isDone ? `0 0 10px 2px ${accent}30` : 'none',
-                                                                transform: isActive ? 'scale(1.15)' : 'scale(1)',
-                                                            }}
-                                                        >
-                                                            {isDone
-                                                                ? <Check className="w-4 h-4" style={{ color: accent }} />
-                                                                : <Icon className="w-4 h-4" style={{ color: isActive ? accent : '#475569' }} />
-                                                            }
-                                                            {/* Pulse ring when active */}
-                                                            {isActive && (
-                                                                <span
-                                                                    className="absolute inset-0 rounded-full border-2 animate-ping"
-                                                                    style={{ borderColor: accent, opacity: 0.4 }}
-                                                                />
-                                                            )}
-                                                            {/* Selected ring */}
-                                                            {isSelected && !isActive && (
-                                                                <span
-                                                                    className="absolute -inset-1 rounded-full border"
-                                                                    style={{ borderColor: `${accent}60` }}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                        {/* Label */}
-                                                        <span
-                                                            className="text-[9px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors"
-                                                            style={{ color: isActive ? accent : isDone ? `${accent}cc` : '#475569' }}
-                                                        >
-                                                            {agent.name.split(' ')[0]}
-                                                        </span>
-                                                    </button>
-
-                                                    {/* Arrow connector */}
-                                                    {idx < ALL_AGENTS.length - 1 && (
-                                                        <div className="flex items-center px-1 mt-[-10px]">
-                                                            <div
-                                                                className="h-px transition-all duration-700"
-                                                                style={{
-                                                                    width: '28px',
-                                                                    background: isDone
-                                                                        ? `linear-gradient(90deg, ${accent}80, ${ACCENT[ALL_AGENTS[idx + 1].color] ?? '#94a3b8'}80)`
-                                                                        : '#1e293b'
-                                                                }}
-                                                            />
-                                                            <svg width="8" height="8" viewBox="0 0 8 8" className="shrink-0">
-                                                                <path
-                                                                    d="M0 4h6M4 1l3 3-3 3"
-                                                                    stroke={isDone ? accent : '#1e293b'}
-                                                                    strokeWidth="1.5"
-                                                                    fill="none"
-                                                                    strokeLinecap="round"
-                                                                    strokeLinejoin="round"
-                                                                />
-                                                            </svg>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                {/* ── LOG PANEL + ACTION ───────────────────────── */}
-                                <div className="grid grid-cols-5 gap-4">
-                                    {/* Log panel (3/5) */}
-                                    <div className="col-span-3 flex flex-col" style={{ height: '300px' }}>
-                                        {selectedAgent ? (() => {
-                                            const selMeta = ALL_AGENTS.find(a => a.id === selectedAgent);
-                                            const selLog = agentLogs[selectedAgent] || { logs: [], thought: '' };
-                                            const selDone = completedAgents.includes(selectedAgent);
-                                            return (
-                                                <TerminalLog
-                                                    logs={selLog.logs.length ? selLog.logs : logs.filter(l => l.includes(selMeta?.name.split(' ')[0] || ''))}
-                                                    thought={selDone ? '' : selLog.thought || (activeAgent === selectedAgent ? currentThought : '')}
-                                                    title={selMeta?.name ?? selectedAgent}
-                                                />
-                                            );
-                                        })() : (
-                                            <TerminalLog logs={logs} thought={currentThought} title="System" />
-                                        )}
+                                    {/* LEFT 2/5 — Agent Graph */}
+                                    <div className="col-span-2 flex flex-col">
+                                        <AgentFlowGraph
+                                            activeAgent={activeAgent}
+                                            completedAgents={completedAgents}
+                                            selectedAgent={selectedAgent}
+                                            onSelect={(id) => {
+                                                setSelectedAgent(id);
+                                                if (agentOutputs[id]) setInspectedAgent(id);
+                                            }}
+                                        />
                                     </div>
 
-                                    {/* Action / completion (2/5) */}
-                                    <div className="col-span-2 flex flex-col justify-between gap-3">
+                                    {/* RIGHT 3/5 — Log Panel */}
+                                    <div className="col-span-3 flex flex-col gap-3">
+                                        <div className="flex-1 min-h-0" style={{ height: '320px' }}>
+                                            {(() => {
+                                                const selMeta = ALL_AGENTS.find(a => a.id === selectedAgent);
+                                                const selLog = agentLogs[selectedAgent] || { logs: [], thought: '' };
+                                                const selDone = completedAgents.includes(selectedAgent);
+                                                return (
+                                                    <TerminalLog
+                                                        logs={selLog.logs.length ? selLog.logs : (selectedAgent ? [] : logs)}
+                                                        thought={selDone ? '' : (activeAgent === selectedAgent ? selLog.thought || currentThought : '')}
+                                                        title={selMeta?.name ?? (selectedAgent ? selectedAgent : 'System')}
+                                                    />
+                                                );
+                                            })()}
+                                        </div>
+
+                                        {/* Action area */}
                                         {isComplete ? (
-                                            <>
-                                                <div className="bg-green-950/20 border border-green-900/40 rounded-xl p-4 text-center">
-                                                    <p className="text-green-300 text-sm font-medium mb-1">Script Ready</p>
-                                                    <p className="text-slate-500 text-xs">All {ALL_AGENTS.length} agents completed.</p>
+                                            <div className="space-y-2">
+                                                <div className="bg-green-950/20 border border-green-900/40 rounded-xl p-3 text-center">
+                                                    <p className="text-green-300 text-sm font-medium">Script Ready</p>
+                                                    <p className="text-slate-500 text-xs mt-0.5">All agents finished. Click any node to review its output.</p>
                                                 </div>
                                                 <motion.button
                                                     initial={{ opacity: 0, y: 8 }}
                                                     animate={{ opacity: 1, y: 0 }}
                                                     onClick={() => router.push('/studio')}
-                                                    className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl transition-all shadow-xl shadow-green-900/30 flex items-center justify-center space-x-2 active:scale-95"
+                                                    className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center space-x-2 active:scale-95"
                                                 >
                                                     <span>Enter Studio</span>
                                                     <ArrowRight className="w-4 h-4" />
@@ -794,28 +710,20 @@ export default function Home() {
                                                     disabled={!selectedAgent || !agentOutputs[selectedAgent]}
                                                     className="w-full text-xs text-slate-500 hover:text-slate-300 disabled:opacity-30 py-2 border border-slate-800 rounded-lg hover:border-slate-600 transition-all"
                                                 >
-                                                    Inspect selected agent output
+                                                    Inspect selected agent output →
                                                 </button>
-                                            </>
+                                            </div>
                                         ) : (
-                                            <div className="flex flex-col gap-2 h-full">
-                                                <p className="text-xs text-slate-600 leading-relaxed">
-                                                    Each node represents an AI agent in the pipeline.<br />
-                                                    Click any node to focus its log on the left.
-                                                </p>
-                                                <div className="mt-auto space-y-1">
-                                                    {ALL_AGENTS.map(a => (
-                                                        <div key={a.id} className="flex items-center gap-2 text-[10px]">
-                                                            <div
-                                                                className="w-1.5 h-1.5 rounded-full shrink-0"
-                                                                style={{ background: completedAgents.includes(a.id) ? '#34d399' : activeAgent === a.id ? '#22d3ee' : '#1e293b' }}
-                                                            />
-                                                            <span style={{ color: completedAgents.includes(a.id) ? '#34d399' : activeAgent === a.id ? '#22d3ee' : '#334155' }}>
-                                                                {a.name}
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                            <div className="text-[10px] text-slate-600 space-y-1">
+                                                {ALL_AGENTS.map(a => (
+                                                    <div key={a.id} className="flex items-center gap-1.5">
+                                                        <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{
+                                                            background: completedAgents.includes(a.id) ? '#22c55e'
+                                                                : activeAgent === a.id ? '#22d3ee' : '#1e293b'
+                                                        }} />
+                                                        <span style={{ color: completedAgents.includes(a.id) ? '#22c55e' : activeAgent === a.id ? '#22d3ee' : '#334155' }}>{a.name}</span>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
