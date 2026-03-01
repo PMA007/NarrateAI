@@ -12,7 +12,6 @@ Analyze the user's input topic and categorize it into the most appropriate genre
 3. "science": Physics, biology, chemistry, space, health, empirical topics.
 4. "tech": Programming, software, hardware, engineering, how-to guides.
 5. "story": Fictional stories, creative writing, myths, legends.
-5. "story": Fictional stories, creative writing, myths, legends.
 6. "coding": Code explanations, algorithms, data structures, programming concepts.
 7. "general": Anything else (motivational, simple explanations, abstract concepts).
 
@@ -34,11 +33,12 @@ Select the best layout for each slide:
 2. "bullets": Standard list. Content: { bullets: ["pt1", "pt2"] }
 3. "columns_3": Exactly 3 items. Content: { bullets: ["1", "2", "3"] }
 4. "grid_cards": Exactly 4 items. Content: { bullets: ["1", "2", "3", "4"] }
-5. "comparison": Compare A vs B. Content: { bullets: ["A1", "A2", "B1", "B2"] }
+5. "comparison": Compare A vs B. Content: { bullets: ["A1 (Side A)", "A2 (Side A)", "B1 (Side B)", "B2 (Side B)"] } — first 2 bullets are Side A, last 2 are Side B.
 6. "process_flow": Steps, timelines, evolution. Content: { flow_steps: ["Step 1", "Step 2"] }
 7. "chart_bar": Compare values. Content: { chart_data: { labels: ["A", "B"], values: [10, 20], label: "Metric" } }
 8. "chart_line": Trends over time. Content: { chart_data: { labels: ["Year 1", "Year 2"], values: [10, 20], label: "Growth" } }
 9. "coding": Code walkthroughs. Content: { code_snippet: "function add(a, b) {\n  return a + b;\n}", highlight_lines: [2] }
+10. "table": Structured data tables. Content: { table_data: { headers: ["Col1", "Col2", "Col3"], rows: [["R1C1", "R1C2", "R1C3"], ["R2C1", "R2C2", "R2C3"]] } }
 `;
 
 const BASE_OUTPUT_FORMAT = `
@@ -177,7 +177,8 @@ export const CONTENT_PROMPT = (
   topic: string,
   genre: string,
   outline: { title: string, visual_cue: string }[] | string[],
-  template: string
+  template: string,
+  researchNotes?: string
 ) => `
 You are an expert Slide Content Creator.
 Topic: "${topic}"
@@ -185,7 +186,11 @@ Genre: "${genre}"
 Template: "${template}" (Visual style)
 
 Outline: ${JSON.stringify(outline)}
-Genre Rules: ${JSON.stringify(GENRE_INSTRUCTIONS[genre as keyof typeof GENRE_INSTRUCTIONS] || GENRE_INSTRUCTIONS['general'])}
+Genre Rules:
+${GENRE_INSTRUCTIONS[genre as keyof typeof GENRE_INSTRUCTIONS] || GENRE_INSTRUCTIONS['general']}${researchNotes && researchNotes !== 'Research skipped (not needed.)' && researchNotes !== 'Research skipped (error).' ? `
+
+RESEARCH NOTES (CRITICAL — use these facts in the slides):
+${researchNotes}` : ''}
 
 Goal: generate the JSON content for each slide.
 For 'nanobanna' template, use 'grid_cards' or 'columns_3' often.
@@ -223,6 +228,7 @@ Genre: "${genre}"
 Slides: ${JSON.stringify(scriptContent)}
 
 Goal: Write a cohesive, engaging voiceover script for EACH slide.
+You MUST output EXACTLY ${scriptContent.length} narrations — one for every slide, in the same order.
 
 INSTRUCTIONS:
 1. First, THINK about the tone, pacing, and transitions. Write a "THOUGHT" block.
@@ -263,13 +269,15 @@ THOUGHT: The pacing is a bit slow in the middle...
 
 Output STRICT JSON:
 {
-  "critique": "Overall summary of quality.",
+  "overall_feedback": "Overall summary of quality.",
   "suggestions": [
      { "slide_index": 0, "suggestion": "Make the hook punchier." },
      { "slide_index": 2, "suggestion": "Use a chart instead of bullets for data." }
   ],
-  "needs_improvement": boolean
+  "needs_improvement": true
 }
+
+IMPORTANT: "needs_improvement" must be exactly true or false (not the word 'boolean').
 `;
 
 // --- 5. IMPROVER ---
@@ -280,9 +288,12 @@ Critique: ${JSON.stringify(critique)}
 
 Goal: Apply the suggestions to IMPROVE the script.
 
+${BASE_VISUAL_RULES}
+
 INSTRUCTIONS:
 1. First, THINK about how to apply the fix. Write a "THOUGHT" block.
-2. Output the JSON.
+2. Output the FULL refined script — include ALL slides, even unchanged ones.
+3. Every slide MUST include "slide_id" (1-based index) and must use only the layouts listed above.
 
 Example:
 THOUGHT: I will shorten the text on slide 3...
@@ -293,7 +304,10 @@ THOUGHT: I will shorten the text on slide 3...
 Output STRICT JSON (The FULL refined script):
 {
   "refinedScript": {
-    "slides": [ ... (full list of slides with updates) ... ]
+    "slides": [
+      { "slide_id": 1, "title": "...", "layout": "intro", "content": { ... }, "narration": "..." },
+      { "slide_id": 2, "title": "...", "layout": "bullets", "content": { ... }, "narration": "..." }
+    ]
   }
 }
 `;
