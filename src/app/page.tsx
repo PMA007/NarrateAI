@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,6 +23,33 @@ const ALL_AGENTS = [
     { id: 'merger', name: 'Final Assembler', desc: 'Packaging the video script', icon: GitMerge, color: 'cyan' },
 ];
 
+// One-liner summaries per agent output type (shown in the post-completion agent grid)
+function getAgentOneliner(output: any): string {
+    if (!output) return 'No output captured.';
+    switch (output.type) {
+        case 'research':
+            return (output.notes && output.notes !== 'Research skipped (not needed.)' && output.notes !== 'Research skipped (error).')
+                ? 'Web research gathered & synthesized.'
+                : 'Covered from built-in knowledge.';
+        case 'outline':
+            return `Refined ${output.slides?.length ?? 0}-slide narrative arc.`;
+        case 'content':
+            return `Designed ${output.slides?.length ?? 0} slides with visual layouts.`;
+        case 'narration':
+            return `Authored ${output.narrations?.length ?? 0} voice-over scripts.`;
+        case 'review':
+            return output.critique?.needs_improvement
+                ? 'Found issues – forwarded to Improver.'
+                : 'Script approved — quality verified ✓';
+        case 'improvement':
+            return output.applied ? 'Applied content refinements.' : 'Script was already high-quality.';
+        case 'merger':
+            return `Assembled ${output.slideCount} slides into final package.`;
+        default:
+            return 'Completed.';
+    }
+}
+
 // Static icon colors for the inspector modal (Tailwind JIT can't resolve dynamic class strings)
 const MODAL_ICON_COLORS: Record<string, string> = {
     blue: '#60a5fa', indigo: '#818cf8', purple: '#c084fc',
@@ -40,15 +67,15 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
             case 'research':
                 return (
                     <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Research Notes</p>
-                        <pre className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-mono bg-slate-950 p-4 rounded-lg max-h-96 overflow-y-auto">{output.notes || 'No research notes available (topic did not require web research).'}</pre>
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Research Notes</p>
+                        <pre className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-mono bg-slate-950 p-4 rounded-lg">{output.notes || 'No research notes available (topic did not require web research).'}</pre>
                     </div>
                 );
             case 'outline':
                 return (
                     <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Refined Slide Outline ({output.slides?.length || 0} slides)</p>
-                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Refined Slide Outline ({output.slides?.length || 0} slides)</p>
+                        <div className="space-y-2">
                             {(output.slides || []).map((s: any, i: number) => (
                                 <div key={i} className="flex items-center space-x-3 bg-slate-900 p-3 rounded-lg border border-slate-800">
                                     <span className="text-xs text-slate-500 font-mono w-5 shrink-0">{i + 1}</span>
@@ -61,8 +88,8 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
             case 'content':
                 return (
                     <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Slide Content ({output.slides?.length || 0} slides)</p>
-                        <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Slide Content ({output.slides?.length || 0} slides)</p>
+                        <div className="space-y-3">
                             {(output.slides || []).map((s: any, i: number) => (
                                 <div key={i} className="bg-slate-900 p-4 rounded-lg border border-slate-800">
                                     <div className="flex items-center space-x-2 mb-2">
@@ -79,8 +106,8 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
             case 'narration':
                 return (
                     <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Narration Scripts ({output.narrations?.length || 0} slides)</p>
-                        <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Narration Scripts ({output.narrations?.length || 0} slides)</p>
+                        <div className="space-y-3">
                             {(output.narrations || []).map((n: string, i: number) => (
                                 <div key={i} className="bg-slate-900 p-4 rounded-lg border border-slate-800">
                                     <span className="text-xs text-slate-500 font-mono block mb-1">Slide {i + 1}</span>
@@ -98,17 +125,25 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
                             {critique.needs_improvement ? <AlertCircle className="w-4 h-4 shrink-0" /> : <Check className="w-4 h-4 shrink-0" />}
                             <span className="text-sm font-medium">{critique.needs_improvement ? 'Improvements Needed' : 'Script Approved — No Changes Required'}</span>
                         </div>
-                        {critique.overall_feedback && <p className="text-sm text-slate-300 bg-slate-900 p-3 rounded-lg border border-slate-800">{critique.overall_feedback}</p>}
+                        {critique.overall_feedback && <p className="text-sm text-slate-300 bg-slate-900 p-3 rounded-lg border border-slate-800">{typeof critique.overall_feedback === 'string' ? critique.overall_feedback : JSON.stringify(critique.overall_feedback)}</p>}
                         {critique.suggestions?.length > 0 && (
                             <div>
                                 <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Suggestions</p>
-                                <ul className="space-y-1">
-                                    {critique.suggestions.map((s: string, i: number) => (
-                                        <li key={i} className="text-sm text-slate-400 flex items-start space-x-2">
-                                            <ChevronRight className="w-3.5 h-3.5 mt-0.5 text-orange-400 shrink-0" />
-                                            <span>{s}</span>
-                                        </li>
-                                    ))}
+                                <ul className="space-y-2">
+                                    {critique.suggestions.map((s: any, i: number) => {
+                                        // Handle both plain strings and objects like {slide_index, suggestion}
+                                        const text = typeof s === 'string' ? s : s?.suggestion || s?.text || JSON.stringify(s);
+                                        const slideRef = typeof s === 'object' && s?.slide_index != null ? `Slide ${s.slide_index}` : null;
+                                        return (
+                                            <li key={i} className="text-sm text-slate-400 flex items-start space-x-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                                                <ChevronRight className="w-3.5 h-3.5 mt-0.5 text-orange-400 shrink-0" />
+                                                <span>
+                                                    {slideRef && <span className="text-orange-400/70 font-mono text-xs mr-1.5">[{slideRef}]</span>}
+                                                    {text}
+                                                </span>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             </div>
                         )}
@@ -134,16 +169,21 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
     };
 
     return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <>
+            {/* Backdrop */}
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-40" onClick={onClose} />
+            {/* Drawer panel */}
             <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+                className="fixed right-0 top-0 bottom-0 z-50 w-[440px] max-w-[92vw] bg-slate-900 border-l border-slate-700/80 shadow-2xl flex flex-col"
                 onClick={e => e.stopPropagation()}
-                className="w-full max-w-xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden"
             >
-                <div className="flex items-center justify-between p-4 border-b border-slate-800" style={{ background: `var(--modal-${agent.color}, rgba(15,23,42,0.3))` }}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 shrink-0"
+                    style={{ borderTopColor: MODAL_ICON_COLORS[agent.color] ?? '#334155', borderTopWidth: 2 }}>
                     <div className="flex items-center space-x-3">
                         <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
                             <agent.icon className="w-5 h-5" style={{ color: MODAL_ICON_COLORS[agent.color] ?? '#94a3b8' }} />
@@ -157,9 +197,12 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
                         <X className="w-4 h-4" />
                     </button>
                 </div>
-                <div className="p-5">{renderOutput()}</div>
+                {/* Scrollable body */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-1 custom-scrollbar">
+                    {renderOutput()}
+                </div>
             </motion.div>
-        </div>
+        </>
     );
 }
 
@@ -186,7 +229,7 @@ export default function Home() {
     const [agentOutputs, setAgentOutputs] = useState<Record<string, any>>({});
     const [inspectedAgent, setInspectedAgent] = useState<string | null>(null);
     // Per-agent logs: stores { logs: string[], thought: string } keyed by agentId
-    const [agentLogs, setAgentLogs] = useState<Record<string, { logs: string[]; thought: string }>>({});
+    const [agentLogs, setAgentLogs] = useState<Record<string, { logs: { time: string, text: string }[]; thought: string }>>({});
     // Which agent's log panel is showing on the right
     const [selectedAgent, setSelectedAgent] = useState<string>('');
 
@@ -240,8 +283,9 @@ export default function Home() {
         setStep('style');
     };
 
-    const [logs, setLogs] = useState<string[]>([]);
+    const [logs, setLogs] = useState<{ time: string, text: string }[]>([]);
     const [currentThought, setCurrentThought] = useState('');
+    const activeAgentRef = useRef<string>('');
 
     const handleFinalGeneration = async () => {
         setIsLoading(true);
@@ -250,6 +294,7 @@ export default function Home() {
         setLogs([]);
         setIsComplete(false);
         setActiveAgent('');
+        activeAgentRef.current = '';
         setCompletedAgents([]);
         setAgentOutputs({});
         setCurrentThought('');
@@ -284,16 +329,22 @@ export default function Home() {
                             const event = JSON.parse(line.substring(6));
 
                             if (event.type === 'log') {
-                                setLogs(prev => [...prev, event.message]);
+                                const newLog = {
+                                    time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                                    text: event.message
+                                };
+                                setLogs(prev => [...prev, newLog]);
                                 setCurrentThought('');
                                 // Also add log to per-agent store
+                                // Prefer explicit agentId from event, fall back to ref (sync) then state (async)
                                 setAgentLogs(prev => {
-                                    const aid = event.agentId || activeAgent;
+                                    const aid = event.agentId || activeAgentRef.current;
                                     if (!aid) return prev;
                                     const existing = prev[aid] || { logs: [], thought: '' };
-                                    return { ...prev, [aid]: { ...existing, logs: [...existing.logs, event.message] } };
+                                    return { ...prev, [aid]: { ...existing, logs: [...existing.logs, newLog] } };
                                 });
                             } else if (event.type === 'agent_active') {
+                                activeAgentRef.current = event.agentId;
                                 // Mark previous active agent as completed
                                 setActiveAgent(prev => {
                                     if (prev) setCompletedAgents(c => c.includes(prev) ? c : [...c, prev]);
@@ -301,24 +352,39 @@ export default function Home() {
                                 });
                                 // Auto-select the newly active agent in the log panel
                                 setSelectedAgent(event.agentId);
-                                // Reset thought for new agent
-                                setAgentLogs(prev => ({
-                                    ...prev,
-                                    [event.agentId]: prev[event.agentId] || { logs: [], thought: '' }
-                                }));
+                                // Ensure agent logs exist for this agent without wiping out history
+                                setAgentLogs(prev => {
+                                    const existing = prev[event.agentId] || { logs: [], thought: '' };
+                                    return {
+                                        ...prev,
+                                        [event.agentId]: { ...existing }
+                                    };
+                                });
                             } else if (event.type === 'agent_complete') {
+                                console.log('[agent_complete] Received for:', event.agentId, 'output:', event.output);
                                 setAgentOutputs(prev => ({ ...prev, [event.agentId]: event.output }));
                                 setCompletedAgents(prev => prev.includes(event.agentId) ? prev : [...prev, event.agentId]);
-                                // Clear thought for completed agent
-                                setAgentLogs(prev => ({
-                                    ...prev,
-                                    [event.agentId]: { ...(prev[event.agentId] || { logs: [] }), thought: '' }
-                                }));
+
+                                // For agents using structured output, they might not emit 'token' chunks. 
+                                // We inject their final output payload as a JSON thought block here if they have one.
+                                if (event.output && typeof event.output === 'object') {
+                                    setAgentLogs(prev => {
+                                        const existing = prev[event.agentId] || { logs: [], thought: '' };
+                                        // Only append if the thought string is relatively empty (meaning it didn't stream properly)
+                                        if (existing.thought.trim().length < 50) {
+                                            const formattedOutput = `\n\`\`\`json\n${JSON.stringify(event.output, null, 2)}\n\`\`\`\n`;
+                                            return { ...prev, [event.agentId]: { ...existing, thought: existing.thought + formattedOutput } };
+                                        }
+                                        return prev;
+                                    });
+                                }
+
+                                // DO NOT clear thought for completed agent so it can be viewed later.
                             } else if (event.type === 'token') {
                                 setCurrentThought(prev => prev + event.message);
-                                // Route token to active agent's per-agent thought
+                                // Route token to active agent's per-agent thought (using ref for fresh value)
                                 setAgentLogs(prev => {
-                                    const aid = activeAgent;
+                                    const aid = activeAgentRef.current;
                                     if (!aid) return prev;
                                     const existing = prev[aid] || { logs: [], thought: '' };
                                     return { ...prev, [aid]: { ...existing, thought: existing.thought + event.message } };
@@ -340,7 +406,7 @@ export default function Home() {
                                 throw new Error(event.message);
                             }
                         } catch (e) {
-                            console.error("Parse Error", e);
+                            console.error('[SSE] JSON Parse Error on line:', line.substring(0, 200), '\nError:', e);
                         }
                     }
                 }
@@ -657,10 +723,10 @@ export default function Home() {
                                 </div>
 
                                 {/* ── Two-panel: [Graph] + [Log] ── */}
-                                <div className="grid grid-cols-5 gap-3" style={{ minHeight: '360px' }}>
+                                <div className="grid grid-cols-5 gap-3">
 
                                     {/* LEFT 2/5 — Agent Graph */}
-                                    <div className="col-span-2 flex flex-col">
+                                    <div className="col-span-2 flex flex-col bg-slate-950/20 rounded-xl border border-white/5 relative">
                                         <AgentFlowGraph
                                             activeAgent={activeAgent}
                                             completedAgents={completedAgents}
@@ -681,9 +747,11 @@ export default function Home() {
                                                 const selDone = completedAgents.includes(selectedAgent);
                                                 return (
                                                     <TerminalLog
-                                                        logs={selLog.logs.length ? selLog.logs : (selectedAgent ? [] : logs)}
-                                                        thought={selDone ? '' : (activeAgent === selectedAgent ? selLog.thought || currentThought : '')}
+                                                        logs={selLog.logs && selLog.logs.length > 0 ? selLog.logs : (selectedAgent ? [] : logs)}
+                                                        thought={selDone ? selLog.thought : (activeAgent === selectedAgent ? (selLog.thought || currentThought) : '')}
                                                         title={selMeta?.name ?? (selectedAgent ? selectedAgent : 'System')}
+                                                        isComplete={selDone}
+                                                        output={selDone ? agentOutputs[selectedAgent] : undefined}
                                                     />
                                                 );
                                             })()}
@@ -692,9 +760,42 @@ export default function Home() {
                                         {/* Action area */}
                                         {isComplete ? (
                                             <div className="space-y-2">
-                                                <div className="bg-green-950/20 border border-green-900/40 rounded-xl p-3 text-center">
-                                                    <p className="text-green-300 text-sm font-medium">Script Ready</p>
-                                                    <p className="text-slate-500 text-xs mt-0.5">All agents finished. Click any node to review its output.</p>
+                                                {/* Agent summary grid */}
+                                                <div className="bg-slate-950/60 border border-slate-800/60 rounded-xl overflow-hidden">
+                                                    <div className="px-3 py-1.5 border-b border-slate-800/60 flex items-center justify-between">
+                                                        <span className="text-[9px] uppercase tracking-widest font-bold text-slate-500">Agent Results</span>
+                                                        <span className="text-[9px] text-slate-600">click to inspect</span>
+                                                    </div>
+                                                    <div className="divide-y divide-slate-800/40">
+                                                        {ALL_AGENTS.map(agent => {
+                                                            const out = agentOutputs[agent.id];
+                                                            const done = completedAgents.includes(agent.id);
+                                                            const isSelected = selectedAgent === agent.id;
+                                                            return (
+                                                                <button
+                                                                    key={agent.id}
+                                                                    onClick={() => {
+                                                                        setSelectedAgent(agent.id);
+                                                                        if (out) setInspectedAgent(agent.id);
+                                                                    }}
+                                                                    className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${
+                                                                        isSelected ? 'bg-slate-800/80' : 'hover:bg-slate-900/60'
+                                                                    } ${done ? '' : 'opacity-40'}`}
+                                                                >
+                                                                    <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 bg-slate-900">
+                                                                        <agent.icon className="w-3 h-3" style={{ color: done ? MODAL_ICON_COLORS[agent.color] : '#475569' }} />
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <span className="text-[10px] font-bold text-slate-300 block leading-tight">{agent.name}</span>
+                                                                        <span className="text-[9px] text-slate-500 block truncate leading-tight mt-0.5">
+                                                                            {done ? getAgentOneliner(out) : 'Waiting...'}
+                                                                        </span>
+                                                                    </div>
+                                                                    {done && out && <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
                                                 <motion.button
                                                     initial={{ opacity: 0, y: 8 }}
@@ -705,13 +806,6 @@ export default function Home() {
                                                     <span>Enter Studio</span>
                                                     <ArrowRight className="w-4 h-4" />
                                                 </motion.button>
-                                                <button
-                                                    onClick={() => selectedAgent && setInspectedAgent(selectedAgent)}
-                                                    disabled={!selectedAgent || !agentOutputs[selectedAgent]}
-                                                    className="w-full text-xs text-slate-500 hover:text-slate-300 disabled:opacity-30 py-2 border border-slate-800 rounded-lg hover:border-slate-600 transition-all"
-                                                >
-                                                    Inspect selected agent output →
-                                                </button>
                                             </div>
                                         ) : (
                                             <div className="text-[10px] text-slate-600 space-y-1">

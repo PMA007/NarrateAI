@@ -141,7 +141,7 @@ export function AgentFlowGraph({
     const isSentinel = (id: string) => SENTINELS.includes(id);
 
     return (
-        <div className="w-full h-full flex flex-col items-center">
+        <div className="w-full h-[320px] max-h-[400px] flex flex-col items-center overflow-y-auto overflow-x-hidden custom-scrollbar pr-2">
             {/* Legend */}
             <div className="flex items-center gap-3 mb-2 text-[9px] font-mono text-slate-600 uppercase tracking-widest">
                 <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-slate-700 border border-slate-600" /> Pending</span>
@@ -152,7 +152,8 @@ export function AgentFlowGraph({
             <svg
                 viewBox={`0 0 ${SVG_W} ${SVG_H}`}
                 width="100%"
-                style={{ overflow: 'visible', flex: 1 }}
+                height={SVG_H}
+                style={{ overflow: 'visible', flexShrink: 0 }}
             >
                 <defs>
                     {/* Arrow markers */}

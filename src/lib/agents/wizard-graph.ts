@@ -61,9 +61,8 @@ async function flowNode(state: typeof WizardState.State, config?: RunnableConfig
 
 async function contentNode(state: typeof WizardState.State, config?: RunnableConfig) {
     console.log("🎨 Content Agent: Initiating slide generation...");
-    // console.log(`🧠 Content Agent: Analyzing topic "${state.topic}" and genre "${state.genre}"...`);
 
-    const prompt = CONTENT_PROMPT(state.topic, state.genre, state.outline, state.template);
+    const prompt = CONTENT_PROMPT(state.topic, state.genre, state.outline, state.template, state.research_notes);
     const response = await llm.invoke([new HumanMessage(prompt)], config);
 
     try {
