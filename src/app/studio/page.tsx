@@ -18,7 +18,7 @@ function StudioContent() {
         isPlaying, togglePlay, currentTime, totalDuration, seek,
         script, audioUrls, setScript, setAudioUrl,
         generationState, setGenerationState, setAudioStatus,
-        renderMode, setRenderMode, selectedFont, selectedVoice, ttsProvider, suggestions
+        renderMode, setRenderMode, selectedFont, setFont, selectedVoice, ttsProvider, narrationLanguage, suggestions
     } = useStore();
 
 
@@ -191,7 +191,7 @@ function StudioContent() {
                     const audioRes = await fetch('/api/tts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text, voice: selectedVoice, provider: ttsProvider })
+                        body: JSON.stringify({ text, voice: selectedVoice, provider: ttsProvider, narrationLanguage })
                     });
 
                     if (audioRes.ok) {
@@ -311,6 +311,20 @@ function StudioContent() {
                         <Sparkles className="w-5 h-5" />
                     </button>
                     <div className="h-6 w-px bg-neutral-800"></div>
+
+                    {/* Font Selector */}
+                    <select
+                        className="bg-neutral-900 border border-neutral-700 text-neutral-300 text-sm max-w-[10rem] truncate rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-cyan-500"
+                        value={selectedFont || 'Modern'}
+                        onChange={(e) => setFont(e.target.value)}
+                        title="Font Family"
+                    >
+                        {Object.entries(FONT_OPTIONS).map(([key, font]) => (
+                            <option key={key} value={key}>
+                                {font.label}
+                            </option>
+                        ))}
+                    </select>
 
                     {/* Template Selector */}
                     <select

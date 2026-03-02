@@ -8,6 +8,7 @@ import { Loader2, ArrowRight, Check, Sparkles, AlertCircle, Wand2, Search, Libra
 import { NarrateLogo } from '@/components/ui/narrate-logo';
 import { AgentFlowGraph } from '@/components/ui/agent-graph';
 import { TerminalLog } from '@/components/ui/terminal-log';
+import { SARVAM_VOICES, SARVAM_LANGUAGES, AZURE_VOICES, GEMINI_VOICES } from '@/lib/voices';
 
 // Define Wizard Steps
 type WizardStep = 'topic' | 'specs' | 'outline' | 'style' | 'generating';
@@ -208,7 +209,13 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
 
 export default function Home() {
     const router = useRouter();
-    const { setScript } = useStore();
+    const {
+        setScript,
+        ttsProvider, setTTSProvider,
+        selectedVoice, setVoice,
+        narrationLanguage, setNarrationLanguage,
+        contentLanguage, setContentLanguage,
+    } = useStore();
 
     // State
     const [step, setStep] = useState<WizardStep>('topic');
@@ -305,7 +312,7 @@ export default function Home() {
             const response = await fetch('/api/wizard/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ topic, genre, outline, template })
+                body: JSON.stringify({ topic, genre, outline, template, language: contentLanguage })
             });
 
             if (!response.ok) throw new Error(response.statusText);
@@ -674,6 +681,123 @@ export default function Home() {
                                             <div className="text-xs text-slate-500 mt-1 font-medium">{t.desc}</div>
                                         </button>
                                     ))}
+                                </div>
+
+                                {/* ── Voice & Language ─────────────────────────── */}
+                                <div className="space-y-3 pt-4 border-t border-slate-800/50">
+                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Voice &amp; Language</p>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {/* Slide Content Language */}
+                                        <div>
+                                            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Slide Content Language</label>
+                                            <select
+                                                value={contentLanguage}
+                                                onChange={e => setContentLanguage(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
+                                            >
+                                                {['English','Telugu','Hindi','Tamil','Kannada','Malayalam','Bengali','Marathi','Gujarati','Punjabi','Odia'].map(l => (
+                                                    <option key={l} value={l}>{l}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* TTS Engine */}
+                                        <div>
+                                            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">TTS Engine</label>
+                                            <select
+                                                value={ttsProvider}
+                                                onChange={e => {
+                                                    const p = e.target.value as any;
+                                                    setTTSProvider(p);
+                                                    if (p === 'sarvam') { setVoice('shubh'); setNarrationLanguage('te-IN'); }
+                                                    else if (p === 'azure') { setVoice('te-IN-MohanNeural'); }
+                                                    else if (p === 'gemini') { setVoice('default'); }
+                                                    else { setVoice('te'); }
+                                                }}
+                                                className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
+                                            >
+                                                <option value="sarvam">🎙 Sarvam AI (bulbul:v3)</option>
+                                                <option value="google">🔊 Google TTS (free)</option>
+                                                <option value="azure">☁️ Azure Neural TTS</option>
+                                                <option value="gemini">✨ Gemini TTS</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {/* Narration Language — Sarvam & Google */}
+                                        {(ttsProvider === 'sarvam' || ttsProvider === 'google') && (
+                                            <div>
+                                                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Narration Language</label>
+                                                <select
+                                                    value={narrationLanguage}
+                                                    onChange={e => setNarrationLanguage(e.target.value)}
+                                                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
+                                                >
+                                                    {Object.entries(SARVAM_LANGUAGES).map(([code, label]) => (
+                                                        <option key={code} value={code}>{label} ({code})</option>
+                                                    ))}
+                                                    <option value="en-US">English US (en-US)</option>
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {/* Voice / Speaker selector */}
+                                        <div className={ttsProvider === 'sarvam' || ttsProvider === 'google' ? '' : 'col-span-2'}>
+                                            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                                                {ttsProvider === 'gemini' ? 'Speaking Style' : 'Voice / Speaker'}
+                                            </label>
+
+                                            {ttsProvider === 'sarvam' && (
+                                                <select value={selectedVoice} onChange={e => setVoice(e.target.value)}
+                                                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500">
+                                                    <optgroup label="♀ Female">
+                                                        {Object.entries(SARVAM_VOICES).filter(([,v]) => v.gender === 'Female').map(([id,v]) => (
+                                                            <option key={id} value={id}>{v.name}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                    <optgroup label="♂ Male">
+                                                        {Object.entries(SARVAM_VOICES).filter(([,v]) => v.gender === 'Male').map(([id,v]) => (
+                                                            <option key={id} value={id}>{v.name}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                </select>
+                                            )}
+
+                                            {ttsProvider === 'azure' && (
+                                                <select value={selectedVoice} onChange={e => setVoice(e.target.value)}
+                                                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500">
+                                                    {Object.entries(
+                                                        Object.entries(AZURE_VOICES).reduce((acc, [id, v]) => {
+                                                            if (!acc[v.language]) acc[v.language] = [];
+                                                            acc[v.language].push({ id, ...v });
+                                                            return acc;
+                                                        }, {} as Record<string, any[]>)
+                                                    ).map(([lang, voices]) => (
+                                                        <optgroup key={lang} label={lang}>
+                                                            {voices.map((v: any) => <option key={v.id} value={v.id}>{v.name} ({v.gender})</option>)}
+                                                        </optgroup>
+                                                    ))}
+                                                </select>
+                                            )}
+
+                                            {ttsProvider === 'google' && (
+                                                <div className="bg-slate-900 border border-slate-700 text-slate-400 text-sm rounded-lg px-3 py-2 italic">
+                                                    Auto (based on narration language)
+                                                </div>
+                                            )}
+
+                                            {ttsProvider === 'gemini' && (
+                                                <select value={selectedVoice} onChange={e => setVoice(e.target.value)}
+                                                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-purple-500">
+                                                    {Object.keys(GEMINI_VOICES).map(style => (
+                                                        <option key={style} value={style}>{style.charAt(0).toUpperCase() + style.slice(1)}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <button

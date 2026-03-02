@@ -21,14 +21,16 @@ export const NanoBannaFlowchartSlide: React.FC<SlideComponentProps> = ({
         return localTime;
     };
 
-    const titleAnim = useDynamicAnimation(getTime('title'), 0, elementAnimations?.['title']);
+    const titleAnim = useDynamicAnimation(getTime('title'), 0,
+        elementAnimations?.['title'] ?? { type: 'slide_up', duration: 0.7, delay: 0 });
 
     const nodeWidth = 280;
-    const nodeHeight = 100;
+    const nodeHeight = 140; // Increased from 100
     const spacing = 60;
     const totalWidth = steps.length * nodeWidth + (steps.length - 1) * spacing;
     const startX = (width - totalWidth) / 2;
-    const centerY = height / 2 + 40;
+    // centerY moved down slightly to accommodate taller nodes and title
+    const centerY = height / 2 + 60; 
 
     return (
         <g>
@@ -39,7 +41,7 @@ export const NanoBannaFlowchartSlide: React.FC<SlideComponentProps> = ({
 
             {/* Title */}
             <g transform={`translate(${titleAnim.x + 60}, ${titleAnim.y + 60}) scale(${titleAnim.scale})`} opacity={titleAnim.opacity}>
-                <foreignObject x={0} y={0} width={width - 120} height={100}>
+                <foreignObject x={0} y={0} width={width - 120} height={160}> {/* Increased height */}
                     <h2 style={{
                         fontFamily: theme.fonts.heading,
                         color: theme.colors.text.primary,
@@ -58,7 +60,8 @@ export const NanoBannaFlowchartSlide: React.FC<SlideComponentProps> = ({
             <g>
                 {steps.map((step, i) => {
                     const stepId = `step-${i}`;
-                    const anim = useDynamicAnimation(getTime(stepId), 0.5 + i * 0.3, elementAnimations?.[stepId]);
+                    const anim = useDynamicAnimation(getTime(stepId), 0.5 + i * 0.3,
+                        elementAnimations?.[stepId] ?? { type: 'scale_in', duration: 0.5, delay: 0 });
                     const x = startX + i * (nodeWidth + spacing);
 
                     return (

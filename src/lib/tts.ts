@@ -1,15 +1,19 @@
-import * as googleTTS from 'google-tts-api';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getAllAudioBase64 } = require('google-tts-api') as typeof import('google-tts-api');
+
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
     TTSProvider,
     VOICES,
     AZURE_VOICES,
     GEMINI_VOICES,
+    SARVAM_VOICES,
+    SARVAM_LANGUAGES,
     normalizeVoice
 } from './voices';
 
 export type { TTSProvider };
-export { VOICES, AZURE_VOICES, GEMINI_VOICES };
+export { VOICES, AZURE_VOICES, GEMINI_VOICES, SARVAM_VOICES, SARVAM_LANGUAGES };
 
 /**
  * Generate speech using Google Translate TTS (free, fast)
@@ -19,7 +23,7 @@ export async function generateSpeechGoogle(text: string, voice: string = 'en'): 
     try {
         console.log(`🔊 Google TTS: "${text.substring(0, 20)}..." in ${lang}`);
 
-        const results = await googleTTS.getAllAudioBase64(text, {
+        const results = await getAllAudioBase64(text, {
             lang: lang,
             slow: false,
             host: 'https://translate.google.com',
@@ -103,25 +107,17 @@ export async function generateSpeechGemini(
         }
 
         const audioBuffer = Buffer.from(audioPart.inlineData.data, 'base64');
-        console.log(`✅ Gemini TTS generated ${audioBuffer.length} bytes`);
 
-        // Debug: Log MIME and Magic Header
         const mimeType = audioPart.inlineData.mimeType;
-        const header = audioBuffer.subarray(0, 4).toString('hex');
-        console.log(`ℹ️ Gemini Audio MIME: ${mimeType}`);
-        console.log(`🔍 Magic Bytes: ${header}`); // fff3/fff2=MP3, 52494646=WAV
-
         if (mimeType.startsWith('audio/L16') || mimeType.includes('pcm')) {
-            console.log(`ℹ️ Converting RAW PCM to WAV (Rate: 24000Hz, Channels: 1)`);
             return addWavHeader(audioBuffer, 24000, 1, 16);
         }
 
         return audioBuffer;
 
     } catch (error: any) {
-        console.error("❌ Gemini TTS failed:", error.message);
-        // Fallback to Google TTS
-        console.log("⚠️ Falling back to Google TTS...");
+        console.error('❌ Gemini TTS failed:', error.message);
+        console.warn('⚠️ Falling back to Google TTS...');
         return generateSpeechGoogle(text, fallbackVoice);
     }
 }
@@ -213,14 +209,11 @@ export async function generateSpeechAzure(
 
         const arrayBuffer = await response.arrayBuffer();
         const audioBuffer = Buffer.from(arrayBuffer);
-
-        console.log(`✅ Azure TTS generated ${audioBuffer.length} bytes`);
         return audioBuffer;
 
     } catch (error: any) {
-        console.error("❌ Azure TTS failed:", error.message);
-        // Fallback to Google TTS
-        console.log("⚠️ Falling back to Google TTS...");
+        console.error('❌ Azure TTS failed:', error.message);
+        console.warn('⚠️ Falling back to Google TTS...');
         return generateSpeechGoogle(text, normalizeVoice(voiceName));
     }
 }
@@ -236,19 +229,90 @@ function escapeXml(text: string): string {
 }
 
 /**
+ * Generate speech using Sarvam AI (bulbul:v3)
+ *
+ * @param text          - Text to speak
+ * @param languageCode  - BCP-47 code e.g. 'te-IN', 'hi-IN'
+ * @param speaker       - Speaker name e.g. 'shubh', 'priya' (bulbul:v3 default: 'shubh')
+ */
+const VALID_SARVAM_SPEAKERS = new Set(['aditya','ritu','ashutosh','priya','neha','rahul','pooja','rohan','simran','kavya','amit','dev','ishita','shreya','ratan','varun','manan','sumit','roopa','kabir','aayan','shubh','advait','amelia','sophia','anand','tanya','tarun','sunny','mani','gokul','vijay','shruti','suhani','mohit','kavitha','rehan','soham','rupali']);
+
+export async function generateSpeechSarvam(
+    text: string,
+    languageCode: string = 'te-IN',
+    speaker: string = 'shubh'
+): Promise<Buffer> {
+    const apiKey = process.env.SARVAM_API_KEY;
+    // Guard against stale/legacy speaker names (e.g. from persisted store)
+    if (!VALID_SARVAM_SPEAKERS.has(speaker)) {
+        console.warn(`⚠️ Sarvam: speaker '${speaker}' is not valid for bulbul:v3 — falling back to 'shubh'`);
+        speaker = 'shubh';
+    }
+
+    if (!apiKey) {
+        console.warn('⚠️ SARVAM_API_KEY is missing — falling back to Google TTS');
+        return generateSpeechGoogle(text, normalizeVoice(languageCode));
+    }
+
+    try {
+        console.log(`🎙️ Sarvam TTS: "${text.substring(0, 30)}..." lang: ${languageCode}, speaker: ${speaker}`);
+
+        const response = await fetch('https://api.sarvam.ai/text-to-speech', {
+            method: 'POST',
+            headers: {
+                'api-subscription-key': apiKey,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text,
+                target_language_code: languageCode,
+                speaker,
+                pace: 1.0,
+                speech_sample_rate: 22050,
+                model: 'bulbul:v3',
+            }),
+        });
+
+        if (!response.ok) {
+            const errText = await response.text().catch(() => response.status.toString());
+            throw new Error(`Sarvam TTS API error: ${response.status} - ${errText}`);
+        }
+
+        const result = await response.json();
+        // API returns { audios: [base64_wav_string], ... }
+        if (!result.audios || result.audios.length === 0) {
+            throw new Error('Sarvam TTS: no audio in response');
+        }
+
+        const audioBuffer = Buffer.from(result.audios[0], 'base64');
+        return audioBuffer;
+
+    } catch (error: any) {
+        console.error('❌ Sarvam TTS failed:', error.message);
+        console.warn('⚠️ Falling back to Google TTS...');
+        return generateSpeechGoogle(text, normalizeVoice(languageCode));
+    }
+}
+
+/**
  * Unified speech generation function
  */
 export async function generateSpeech(
     text: string,
     voice: string = 'en',
     provider: TTSProvider = 'google',
-    geminiStyle: keyof typeof GEMINI_VOICES = 'default'
+    geminiStyle: keyof typeof GEMINI_VOICES = 'default',
+    narrationLanguage: string = 'te-IN'
 ): Promise<Buffer> {
     if (provider === 'azure') {
         return generateSpeechAzure(text, voice);
     }
     if (provider === 'gemini') {
         return generateSpeechGemini(text, geminiStyle, voice);
+    }
+    if (provider === 'sarvam') {
+        // voice = speaker name (e.g. 'shubh', 'priya'), narrationLanguage = BCP-47 code
+        return generateSpeechSarvam(text, narrationLanguage, voice);
     }
     return generateSpeechGoogle(text, voice);
 }

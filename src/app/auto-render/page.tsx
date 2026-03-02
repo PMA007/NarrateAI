@@ -108,22 +108,35 @@ export default function AutoRenderFramePage() {
     }
 
     return (
-        <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '1280px', // Exact bounding box
-            height: '720px',
-            overflow: 'hidden', // Prevent any scrollbars
-            background: '#000000',
-        }}>
-            <Stage
-                script={script}
-                currentTime={currentTime}
-            // Don't pass width/height props here, let Stage use default 1920x1080
-            // and we'll scale it using the wrapper in Stage itself if needed.
-            // Actually Stage takes width and height but the internal components scale.
-            />
-        </div>
+        <>
+            {/* Force-hide Next.js dev indicator overlay so it never appears in screenshots */}
+            <style>{`
+                nextjs-portal, [data-nextjs-dialog-overlay], [data-nextjs-toast],
+                #__next-build-indicator, [data-next-mark], nextjs-dev-tools-widget,
+                [class*="nextjs"], [id*="__nextjs"] {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    overflow: hidden !important;
+                }
+            `}</style>
+            <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '1280px',
+                height: '720px',
+                overflow: 'hidden',
+                background: '#000000',
+            }}>
+                    <Stage
+                    script={script}
+                    currentTime={currentTime}
+                />
+            </div>
+        </>
     );
 }

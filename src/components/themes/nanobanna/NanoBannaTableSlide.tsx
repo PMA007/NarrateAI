@@ -21,7 +21,8 @@ export const NanoBannaTableSlide: React.FC<SlideComponentProps> = ({
         return localTime;
     };
 
-    const titleAnim = useDynamicAnimation(getTime('title'), 0, elementAnimations?.['title']);
+    const titleAnim = useDynamicAnimation(getTime('title'), 0,
+        elementAnimations?.['title'] ?? { type: 'slide_up', duration: 0.7, delay: 0 });
 
     return (
         <g>
@@ -32,7 +33,7 @@ export const NanoBannaTableSlide: React.FC<SlideComponentProps> = ({
 
             {/* Title */}
             <g transform={`translate(${titleAnim.x + 60}, ${titleAnim.y + 60}) scale(${titleAnim.scale})`} opacity={titleAnim.opacity}>
-                <foreignObject x={0} y={0} width={width - 120} height={100}>
+                <foreignObject x={0} y={0} width={width - 120} height={160}> {/* Increased height */}
                     <h2 style={{
                         fontFamily: theme.fonts.heading,
                         color: theme.colors.text.primary,
@@ -48,8 +49,8 @@ export const NanoBannaTableSlide: React.FC<SlideComponentProps> = ({
             </g>
 
             {/* Table Content */}
-            <g transform="translate(60, 200)">
-                <foreignObject width={width - 120} height={height - 240}>
+            <g transform="translate(60, 260)"> {/* Moved down */}
+                <foreignObject width={width - 120} height={height - 300}> {/* Reduced height */}
                     <div style={{
                         display: 'grid',
                         gridTemplateColumns: `repeat(${tableData.headers.length}, 1fr)`,

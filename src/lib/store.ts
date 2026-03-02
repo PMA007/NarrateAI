@@ -63,10 +63,16 @@ interface AppState {
     setRenderMode: (mode: 'default' | 'high-quality') => void;
 
     // TTS Settings
-    ttsProvider: 'google' | 'gemini' | 'azure';
-    setTTSProvider: (provider: 'google' | 'gemini' | 'azure') => void;
+    ttsProvider: 'google' | 'gemini' | 'azure' | 'sarvam';
+    setTTSProvider: (provider: 'google' | 'gemini' | 'azure' | 'sarvam') => void;
     selectedVoice: string;
     setVoice: (voice: string) => void;
+    /** BCP-47 language code for TTS narration e.g. 'te-IN', 'hi-IN' */
+    narrationLanguage: string;
+    setNarrationLanguage: (lang: string) => void;
+    /** Display language for AI-generated slide content e.g. 'Telugu', 'Hindi' */
+    contentLanguage: string;
+    setContentLanguage: (lang: string) => void;
 
     // Preloaded Assets (Blob URLs)
     preloadedAssets: Record<string, string>;
@@ -132,6 +138,12 @@ export const useStore = create<AppState>((set) => ({
 
     selectedVoice: 'te-IN-MohanNeural', // Default Telugu male voice
     setVoice: (voice) => set({ selectedVoice: voice }),
+
+    narrationLanguage: 'te-IN',
+    setNarrationLanguage: (lang) => set({ narrationLanguage: lang }),
+
+    contentLanguage: 'Telugu',
+    setContentLanguage: (lang) => set({ contentLanguage: lang }),
 
     suggestions: '',
     setSuggestions: (suggestions) => set({ suggestions }),

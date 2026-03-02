@@ -25,7 +25,132 @@ import {
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const Ffmpeg = require('fluent-ffmpeg') as typeof import('fluent-ffmpeg');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ffprobeStatic = require('@ffprobe-installer/ffprobe') as { path: string };
 Ffmpeg.setFfmpegPath((ffmpegStatic as any).path ?? ffmpegStatic);
+Ffmpeg.setFfprobePath(ffprobeStatic.path);
+
+/**
+ * Get precise audio file duration in seconds using ffprobe.
+ * Falls back to a safe minimum if probe fails.
+ */
+function getAudioDurationSeconds(filePath: string): Promise<number> {
+    return new Promise((resolve) => {
+        Ffmpeg.ffprobe(filePath, (err: Error | null, metadata: any) => {
+            if (err || !metadata?.format?.duration) {
+                console.warn(`[ffprobe] Could not probe ${filePath}: ${err?.message ?? 'no duration'} — using 5s fallback`);
+                resolve(5);
+            } else {
+                resolve(parseFloat(String(metadata.format.duration)));
+            }
+        });
+    });
+}
+
+/**
+ * Normalise any audio file to a canonical PCM WAV:
+ *   22050 Hz · stereo (2ch) · signed 16-bit little-endian
+ *
+ * This is the SINGLE most important step for sync.
+ * Different TTS providers return MP3 / WAV at varying rates and channel counts.
+ * By decoding every clip to the same format BEFORE probing its duration,
+ * we guarantee that:
+ *   • ffprobe's reported duration == actual decoded sample count
+ *   • concat filter never gets mismatched sample-rates / channel layouts
+ */
+function normaliseAudio(inputPath: string, outputPath: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        Ffmpeg()
+            .input(inputPath)
+            .outputOptions([
+                '-c:a',  'pcm_s16le',   // raw PCM, no encoder delay/padding
+                '-ar',   '22050',
+                '-ac',   '2',
+            ])
+            .output(outputPath)
+            .on('end', () => resolve())
+            .on('error', (err: Error) =>
+                reject(new Error(`Audio normalise failed (${path.basename(inputPath)}): ${err.message}`))
+            )
+            .run();
+    });
+}
+
+/**
+ * Generate a silent PCM WAV segment of the given duration.
+ * Used as a placeholder for slides whose TTS generation failed.
+ */
+function generateSilenceWav(outputPath: string, durationSeconds: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        Ffmpeg()
+            .input('anullsrc=r=22050:cl=stereo')
+            .inputOptions(['-f', 'lavfi'])
+            .outputOptions([
+                '-t',   durationSeconds.toFixed(6),
+                '-c:a', 'pcm_s16le',
+                '-ar',  '22050',
+                '-ac',  '2',
+            ])
+            .output(outputPath)
+            .on('end', () => resolve())
+            .on('error', (err: Error) => reject(new Error(`Silence gen failed: ${err.message}`)))
+            .run();
+    });
+}
+
+/**
+ * Concatenate normalised per-slide PCM WAV clips into one combined WAV.
+ *
+ * All inputs MUST already be 22050 Hz · stereo · pcm_s16le (guaranteed by
+ * the normalise step in Phase 1). Therefore concat is format-safe and the
+ * output duration equals exactly the sum of all clip durations.
+ */
+async function buildCombinedAudio(
+    normPaths: string[],        // already-normalised WAV for each slide
+    durations: number[],        // for silence fallback only
+    outputPath: string
+): Promise<void> {
+    const tmpDir = path.dirname(outputPath);
+
+    // Replace missing/failed clips with exact-duration silence
+    const resolvedPaths: string[] = await Promise.all(
+        normPaths.map(async (p, i) => {
+            if (p && fs.existsSync(p)) return p;
+            const silPath = path.join(tmpDir, `silence-${i}.wav`);
+            await generateSilenceWav(silPath, durations[i] ?? 5);
+            return silPath;
+        })
+    );
+
+    // Single slide: file is already normalised — just copy it
+    if (resolvedPaths.length === 1) {
+        fs.copyFileSync(resolvedPaths[0], outputPath);
+        return;
+    }
+
+    // Multiple slides: simple sequential concat (safe because all formats match)
+    let cmd = Ffmpeg();
+    resolvedPaths.forEach(p => { cmd = cmd.input(p); });
+
+    const n = resolvedPaths.length;
+    const filterInputs = resolvedPaths.map((_, i) => `[${i}:a]`).join('');
+    const filter = `${filterInputs}concat=n=${n}:v=0:a=1[aout]`;
+
+    await new Promise<void>((resolve, reject) => {
+        cmd
+            .complexFilter(filter)
+            .outputOptions([
+                '-map',  '[aout]',
+                '-c:a',  'pcm_s16le',
+                '-ar',   '22050',
+                '-ac',   '2',
+            ])
+            .output(outputPath)
+            .on('end', () => resolve())
+            .on('error', (err: Error) => reject(new Error(`Audio concat failed: ${err.message}`)))
+            .run();
+    });
+}
 
 // ----------------------------------------------------------------
 // Types
@@ -62,30 +187,47 @@ export async function renderVideo(job: RenderJob): Promise<void> {
     job.message = 'Generating audio...';
     job.progress = 0;
 
-    const audioPaths: string[] = [];
-    const durations: number[] = [];
+    const audioPaths: string[] = [];   // normalised WAV paths (one per slide)
+    const durations: number[] = [];     // exact durations from normalised WAVs
+    // Write raw TTS output using the correct container extension
+    const rawExt = params.provider === 'sarvam' ? '.wav' : '.mp3';
 
     for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
         const text = slide.narration || slide.title;
-        const audioPath = path.join(tmpDir, `slide-${i}.mp3`);
+        const rawPath  = path.join(tmpDir, `slide-${i}-raw${rawExt}`);
+        const normPath = path.join(tmpDir, `slide-${i}-norm.wav`);
 
         job.message = `Generating audio (${i + 1}/${slides.length})...`;
-        job.progress = Math.round((i / slides.length) * 30); // 0–30%
+        job.progress = Math.round((i / slides.length) * 25); // 0–25 %
 
         try {
-            const buffer = await generateSpeech(text, params.voice, params.provider);
-            fs.writeFileSync(audioPath, buffer);
-            audioPaths.push(audioPath);
+            // Step A: get TTS audio from provider
+            const buffer = await generateSpeech(
+                text, params.voice, params.provider, 'default',
+                params.narrationLanguage ?? 'te-IN'
+            );
+            fs.writeFileSync(rawPath, buffer);
 
-            // Estimate duration from file size (MP3 ~128kbps ≈ 16000 bytes/sec)
-            const fileSizeBytes = buffer.byteLength;
-            const estimatedDuration = Math.max(3, fileSizeBytes / 16000);
-            durations.push(estimatedDuration);
+            // Step B: decode + re-encode to canonical PCM WAV (22050 Hz, stereo, s16le).
+            //   • Removes MP3 encoder delay / padding frames.
+            //   • Guarantees all clips share the exact same format for concat.
+            await normaliseAudio(rawPath, normPath);
+
+            // Step C: probe the NORMALISED file — its reported duration now equals
+            //   the real decoded sample count. Build the video timeline from this.
+            const exactDuration = await getAudioDurationSeconds(normPath);
+
+            // Raw file no longer needed
+            try { fs.unlinkSync(rawPath); } catch { /* ignore */ }
+
+            audioPaths.push(normPath);
+            durations.push(exactDuration);
         } catch (err) {
-            console.warn(`[RenderJob ${job.id}] TTS failed for slide ${i}, using default duration`);
-            // Write empty audio as silent placeholder
-            audioPaths.push('');
+            console.warn(`[RenderJob ${job.id}] TTS failed for slide ${i + 1}:`, (err as Error).message);
+            // Clean up any partial files
+            [rawPath, normPath].forEach(p => { try { fs.unlinkSync(p); } catch { /* ignore */ } });
+            audioPaths.push('');        // buildCombinedAudio will synthesise silence
             durations.push(slide.duration ?? 5);
         }
     }
@@ -108,6 +250,20 @@ export async function renderVideo(job: RenderJob): Promise<void> {
     const totalDuration = cumulative;
     const totalFrames = Math.ceil(totalDuration * fps);
 
+    // ── Phase 2b: Pre-mix all audio clips into one combined track ─────────
+    // Concatenate clips in slide order — since each slide's video duration = its
+    // audio clip duration (from ffprobe), sequential concat IS perfectly in sync.
+    job.status = 'audio';
+    job.message = 'Mixing audio tracks...';
+    job.progress = 28;
+
+    const combinedAudioPath = path.join(tmpDir, 'combined_audio.wav');
+    try {
+        await buildCombinedAudio(audioPaths, durations, combinedAudioPath);
+    } catch (audioMixErr) {
+        console.error(`[RenderJob ${job.id}] Audio concat failed:`, audioMixErr);
+    }
+
     // ── Phase 3: Render Frames + Mux ──────────────────────────────────────
     job.status = 'rendering';
     job.message = 'Starting video encoder...';
@@ -116,13 +272,16 @@ export async function renderVideo(job: RenderJob): Promise<void> {
     await muxVideoWithFramePipe(
         job,
         timeline,
-        audioPaths,
+        combinedAudioPath,
         outputPath,
         { width, height, fps, totalFrames, template, fontKey: params.font }
     );
 
-    // ── Cleanup audio temp files ────────────────────────────────────────────
-    audioPaths.forEach(p => {
+    // ── Cleanup ─────────────────────────────────────────────────────────────
+    // audioPaths contains only normalised WAVs (raw files already deleted inline).
+    // Also clean up any silence placeholder files generated by buildCombinedAudio.
+    const silenceFiles = slides.map((_, i) => path.join(tmpDir, `silence-${i}.wav`));
+    [...audioPaths, combinedAudioPath, ...silenceFiles].forEach(p => {
         if (p && fs.existsSync(p)) {
             try { fs.unlinkSync(p); } catch { /* ignore */ }
         }
@@ -136,13 +295,24 @@ export async function renderVideo(job: RenderJob): Promise<void> {
 }
 
 // ----------------------------------------------------------------
-// FFmpeg + Frame Pipe
+// VIDEO PASS — Pipe raw frames + mux with pre-mixed audio
 // ----------------------------------------------------------------
 
+/**
+ * VIDEO PASS
+ *
+ * Inputs:
+ *   [0] stdin  — raw BGRA frames (node-canvas toBuffer('raw') is BGRA on all platforms)
+ *   [1] file   — combined_audio.wav produced by buildCombinedAudio()
+ *
+ * Because audio timing is already baked into the combined WAV, this command
+ * needs NO complex filter and no frame-rate hacks — audio and video simply
+ * start at t=0 and run for exactly the same duration.
+ */
 function muxVideoWithFramePipe(
     job: RenderJob,
     timeline: SlideTimeline[],
-    audioPaths: string[],
+    combinedAudioPath: string,
     outputPath: string,
     opts: {
         width: number;
@@ -155,55 +325,43 @@ function muxVideoWithFramePipe(
 ): Promise<void> {
     return new Promise((resolve, reject) => {
         const { width, height, fps, totalFrames, template, fontKey } = opts;
+        const hasAudio = fs.existsSync(combinedAudioPath);
 
-        // Build FFmpeg command
-        // -f rawvideo reads raw RGBA from stdin
+        // ── Build FFmpeg command ──────────────────────────────────────────
+        // node-canvas toBuffer('raw') returns pixels in BGRA order (Cairo native)
         let cmd = Ffmpeg()
             .input('pipe:0')
             .inputOptions([
                 '-f', 'rawvideo',
-                '-pix_fmt', 'rgba',
-                `-s`, `${width}x${height}`,
-                `-r`, `${fps}`,
+                '-pix_fmt', 'bgra',          // ← BGRA not RGBA (node-canvas native)
+                '-s', `${width}x${height}`,
+                '-r', String(fps),
+                '-thread_queue_size', '512',
             ]);
 
-        // Add one audio input per slide that has audio
-        const validAudio = audioPaths.filter(p => p && fs.existsSync(p));
-        validAudio.forEach(audioPath => {
-            cmd = cmd.input(audioPath);
-        });
-
-        // Build filter_complex to concatenate audio files in order
-        const audioCount = validAudio.length;
-        let audioFilter = '';
-        if (audioCount === 1) {
-            audioFilter = '[1:a]anull[aout]';
-        } else if (audioCount > 1) {
-            const inputs = validAudio.map((_, i) => `[${i + 1}:a]`).join('');
-            audioFilter = `${inputs}concat=n=${audioCount}:v=0:a=1[aout]`;
+        if (hasAudio) {
+            cmd = cmd
+                .input(combinedAudioPath)
+                .inputOptions(['-thread_queue_size', '512']);
         }
 
         const outputOptions = [
             '-c:v', 'libx264',
-            '-preset', 'fast',       // fast encoding, reasonable quality
-            '-crf', '23',            // quality: lower = better (23 is default)
-            '-pix_fmt', 'yuv420p',   // broadest compatibility
-            '-movflags', '+faststart', // enables streaming from beginning
+            '-preset', 'fast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-r', String(fps),               // enforce CFR output
+            '-movflags', '+faststart',
+            '-map', '0:v',
         ];
 
-        if (audioCount > 0) {
-            outputOptions.push('-c:a', 'aac', '-b:a', '128k');
-            if (audioFilter) {
-                cmd = cmd.complexFilter(audioFilter).outputOptions([...outputOptions, '-map', '0:v', '-map', '[aout]']);
-            } else {
-                cmd = cmd.outputOptions([...outputOptions, '-map', '0:v', '-map', '1:a']);
-            }
-        } else {
-            cmd = cmd.outputOptions(outputOptions);
+        if (hasAudio) {
+            outputOptions.push('-map', '1:a', '-c:a', 'aac', '-b:a', '128k', '-shortest');
         }
 
-        cmd = cmd.output(outputPath);
+        cmd = cmd.outputOptions(outputOptions).output(outputPath);
 
+        // ── Event handlers ────────────────────────────────────────────────
         cmd.on('error', (err: Error) => {
             job.status = 'error';
             job.message = `FFmpeg error: ${err.message}`;
@@ -212,87 +370,88 @@ function muxVideoWithFramePipe(
 
         cmd.on('end', () => resolve());
 
-        // Get the underlying child process to write to stdin
-        cmd.run();
+        // ── Start FFmpeg and write frames ─────────────────────────────────
+        // Use the 'start' event (fired when process spawns) instead of a
+        // brittle setTimeout.  _ffmpegProc is set synchronously inside run()
+        // so it is guaranteed to exist when 'start' fires.
+        cmd.on('start', (_cmdLine: string) => {
 
-        // Give FFmpeg a moment to start, then get the stdin pipe
-        setTimeout(async () => {
-            // @ts-ignore – Access internal process
-            const ffmpegProc = (cmd as any)._ffmpegProc;
-            if (!ffmpegProc || !ffmpegProc.stdin) {
-                reject(new Error('Could not access FFmpeg stdin'));
+            const proc = (cmd as any)._ffmpegProc;
+            if (!proc?.stdin) {
+                reject(new Error('FFmpeg process stdin not available'));
                 return;
             }
+            const stdin = proc.stdin;
 
-            const stdin = ffmpegProc.stdin;
+            // Frame writing loop — runs async so we don't block the event loop
+            (async () => {
+                try {
+                    const canvas = createCanvas(width, height);
+                    const ctx = canvas.getContext('2d');
 
-            // Create the canvas ONCE and reuse it across all frames
-            const canvas = createCanvas(width, height);
-            const ctx = canvas.getContext('2d');
+                    for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+                        const currentTime = frameIndex / fps;
 
-            // Dynamically import canvas-compatible drawers (static at top now)
-            // drawNeonBackground, drawRetroBackground, drawSlideContent imported at top
+                        // Find which slide owns this frame
+                        const entry = timeline.find(
+                            t => currentTime >= t.startTime && currentTime < t.endTime
+                        );
+                        const localTime = entry ? currentTime - entry.startTime : 0;
 
-            for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-                const currentTime = frameIndex / fps;
+                        // Clear
+                        ctx.clearRect(0, 0, width, height);
 
-                // Find active slide
-                const entry = timeline.find(t => currentTime >= t.startTime && currentTime < t.endTime);
-                const localTime = entry ? currentTime - entry.startTime : 0;
+                        if (entry) {
+                            if (template === 'retro') {
+                                drawRetroBackground(ctx as unknown as CanvasRenderingContext2D, width, height);
+                            } else {
+                                drawNeonBackground(ctx as unknown as CanvasRenderingContext2D, width, height, localTime);
+                            }
+                            drawSlideContent(
+                                ctx as unknown as CanvasRenderingContext2D,
+                                entry.slide as any,
+                                fontKey,
+                                width,
+                                height,
+                                localTime,
+                                template
+                            );
+                        } else {
+                            ctx.fillStyle = '#000000';
+                            ctx.fillRect(0, 0, width, height);
+                        }
 
-                // Clear canvas
-                ctx.clearRect(0, 0, width, height);
+                        // Write raw BGRA pixels to FFmpeg stdin
+                        const rawBuffer = (canvas as any).toBuffer('raw') as Buffer;
+                        const canWrite = stdin.write(rawBuffer);
 
-                if (entry) {
-                    // Draw background
-                    if (template === 'retro') {
-                        drawRetroBackground(ctx as unknown as CanvasRenderingContext2D, width, height);
-                    } else {
-                        drawNeonBackground(ctx as unknown as CanvasRenderingContext2D, width, height, localTime);
+                        // Progress update
+                        if (frameIndex % 15 === 0) {
+                            job.progress = 30 + Math.round((frameIndex / totalFrames) * 67);
+                            job.message = `Rendering frame ${frameIndex + 1} / ${totalFrames}`;
+                        }
+
+                        // Backpressure: wait for drain; yield every 10 frames otherwise
+                        if (!canWrite) {
+                            await new Promise<void>(res => stdin.once('drain', res));
+                        } else if (frameIndex % 10 === 0) {
+                            await new Promise<void>(res => setImmediate(res));
+                        }
                     }
 
-                    // Draw slide content
-                    drawSlideContent(
-                        ctx as unknown as CanvasRenderingContext2D,
-                        entry.slide as any,
-                        fontKey,
-                        width,
-                        height,
-                        localTime,
-                        template
-                    );
-                } else {
-                    // Black frame (end of presentation)
-                    ctx.fillStyle = '#000000';
-                    ctx.fillRect(0, 0, width, height);
+                    stdin.end();
+                    job.message = 'Finalizing MP4...';
+                    job.progress = 97;
+                } catch (frameErr) {
+                    const e = frameErr instanceof Error ? frameErr : new Error(String(frameErr));
+                    job.status = 'error';
+                    job.message = `Frame render error: ${e.message}`;
+                    stdin.destroy();
+                    reject(e);
                 }
+            })();
+        });
 
-                // Get raw RGBA buffer and write to FFmpeg stdin
-                // node-canvas toBuffer('raw') returns BGRA by default; use 'image/png' then we'll
-                // actually use the rawPixels which are RGBA ordered in node-canvas
-                const rawBuffer = (canvas as any).toBuffer('raw') as Buffer;
-                const canWrite = stdin.write(rawBuffer);
-
-                // Update progress (frames are 30–95% of the total progress range)
-                if (frameIndex % 15 === 0) {
-                    job.progress = 30 + Math.round((frameIndex / totalFrames) * 65);
-                    job.message = `Rendering frame ${frameIndex + 1} / ${totalFrames}`;
-                }
-
-                // Yield to event loop:
-                // - If stdin buffer is full: wait for drain (backpressure-safe)
-                // - Otherwise: yield every 10 frames to keep server responsive
-                if (!canWrite) {
-                    await new Promise<void>(res => stdin.once('drain', res));
-                } else if (frameIndex % 10 === 0) {
-                    await new Promise<void>(res => setImmediate(res));
-                }
-            }
-
-            // Signal to FFmpeg that all frames have been written
-            stdin.end();
-            job.message = 'Finalizing MP4...';
-            job.progress = 97;
-        }, 300);
+        cmd.run();
     });
 }

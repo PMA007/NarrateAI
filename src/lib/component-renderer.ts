@@ -57,9 +57,7 @@ export class ComponentRenderer {
         audioUrls: Record<number, string>,
         onProgress: (progress: number) => void
     ): Promise<Blob> {
-        console.log('🎬 Component Renderer: Starting...');
-        console.log(`📐 Resolution: ${this.width}x${this.height} @ ${this.fps}fps`);
-
+        console.log(`🎥 Rendering ${script.slides.length} slides @ ${this.width}x${this.height} ${this.fps}fps`);
         onProgress(1);
 
         // Build timeline
@@ -121,14 +119,10 @@ export class ComponentRenderer {
         const audioData = await this.decodeAllAudio(timeline, audioUrls);
         onProgress(10);
         await this.encodeAudioChunks(audioEncoder, audioData);
-        console.log('✅ Audio encoding complete');
 
         // Wait for fonts to be fully loaded before starting capture
-        console.log('⏳ Waiting for fonts to load...');
         await document.fonts.ready;
-        // Extra delay to ensure fonts are rendered
         await new Promise(r => setTimeout(r, 500));
-        console.log('✅ Fonts loaded');
 
         // Start Rendering Loop
         this.onUpdateState({ isRendering: true, currentScript: script });
@@ -241,7 +235,6 @@ export class ComponentRenderer {
         }
 
         // Finalize
-        console.log('💾 Finalizing video...');
         await videoEncoder.flush();
         await audioEncoder.flush();
         videoEncoder.close();
@@ -253,8 +246,7 @@ export class ComponentRenderer {
         onProgress(100);
 
         const { buffer } = muxer.target as { buffer: ArrayBuffer };
-        console.log(`✅ Video complete: ${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
-
+        console.log(`✅ Video ready: ${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
         return new Blob([buffer], { type: 'video/mp4' });
     }
 

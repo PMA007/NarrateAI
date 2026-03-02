@@ -23,7 +23,7 @@ export const NanoBannaGraphSlide: React.FC<SlideComponentProps> = ({
     };
 
     const titleId = 'title';
-    const titleConfig = elementAnimations?.[titleId];
+    const titleConfig = elementAnimations?.[titleId] ?? { type: 'slide_up', duration: 0.7, delay: 0 };
     const titleAnim = useDynamicAnimation(getTime(titleId), 0, titleConfig);
 
     if (!chartData) return null;
@@ -32,7 +32,7 @@ export const NanoBannaGraphSlide: React.FC<SlideComponentProps> = ({
     const maxVal = Math.max(...values) || 1;
     const chartLeft = 150;
     const chartRight = width - 100;
-    const chartTop = 200;
+    const chartTop = 260; // Pushed down from 200
     const chartBottom = height - 150;
     const chartWidth = chartRight - chartLeft;
     const chartHeight = chartBottom - chartTop;
@@ -49,7 +49,7 @@ export const NanoBannaGraphSlide: React.FC<SlideComponentProps> = ({
                 transform={`translate(${titleAnim.x + 60}, ${titleAnim.y + 60}) scale(${titleAnim.scale})`}
                 opacity={titleAnim.opacity}
             >
-                <foreignObject x={0} y={0} width={width - 120} height={100}>
+                <foreignObject x={0} y={0} width={width - 120} height={160}> {/* Increased height */}
                     <h2 style={{
                         fontFamily: theme.fonts.heading,
                         color: theme.colors.text.primary,

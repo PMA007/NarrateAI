@@ -43,7 +43,22 @@ export function SlideRenderer({
     previewTime
 }: SlideRendererProps) {
     // Get the theme configuration
-    const theme = THEMES[template] || THEMES['neon'];
+    const baseTheme = THEMES[template] || THEMES['neon'];
+    
+    // Override fonts if fontFamily prop is provided
+    // This allows the Studio font selector to control all slides
+    const theme = React.useMemo(() => {
+        if (!fontFamily) return baseTheme;
+        return {
+            ...baseTheme,
+            fonts: {
+                ...baseTheme.fonts,
+                heading: fontFamily,
+                body: fontFamily,
+                // Do not override mono unless requested? Usually mono should stay mono for code.
+            }
+        };
+    }, [baseTheme, fontFamily]);
 
     // Determine which slide category to use
     const category = getSlideCategory(slide, index);

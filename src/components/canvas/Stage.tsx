@@ -137,25 +137,6 @@ export function Stage({
                 ఫాంట్ ప్రీలోడ్
             </div>
 
-            {/* TEMPORARY: Font Picker for Testing - Remove after testing */}
-            <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 100, background: 'rgba(0,0,0,0.8)', padding: '8px', borderRadius: '8px' }}>
-                <select
-                    value={selectedFont}
-                    onChange={(e) => store.setFont(e.target.value as any)}
-                    style={{ background: '#333', color: '#fff', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}
-                >
-                    {Object.entries(FONT_OPTIONS).filter(([key, config]) =>
-                        config.url.includes('Telugu') ||
-                        ['NTR', 'Ramabhadra', 'Mandali', 'Mallanna', 'Timmana', 'Suranna', 'Suravaram', 'Gurajada', 'Peddana', 'NotoSansTelugu', 'Dhurjati', 'TenaliRamakrishna'].includes(key)
-                    ).map(([key, config]) => (
-                        <option key={key} value={key}>{config.label}</option>
-                    ))}
-                </select>
-                <div style={{ fontSize: '10px', color: '#888', marginTop: '4px' }}>
-                    Current: {fontConfig.family}
-                </div>
-            </div>
-
             {/* Template Background Layer */}
             <Template localTime={localTime} />
 

@@ -17,6 +17,7 @@ export const WizardState = Annotation.Root({
     genre: Annotation<string>(),
     slideCount: Annotation<number>(),
     template: Annotation<string>(),
+    language: Annotation<string>(),  // content & narration language
 
     outline: Annotation<any[]>(), // Input from previous stage or Flow Agent
 
@@ -62,7 +63,7 @@ async function flowNode(state: typeof WizardState.State, config?: RunnableConfig
 async function contentNode(state: typeof WizardState.State, config?: RunnableConfig) {
     console.log("🎨 Content Agent: Initiating slide generation...");
 
-    const prompt = CONTENT_PROMPT(state.topic, state.genre, state.outline, state.template, state.research_notes);
+    const prompt = CONTENT_PROMPT(state.topic, state.genre, state.outline, state.template, state.research_notes, state.language || 'English');
     const response = await llm.invoke([new HumanMessage(prompt)], config);
 
     try {
@@ -77,7 +78,7 @@ async function contentNode(state: typeof WizardState.State, config?: RunnableCon
 
 async function narrationNode(state: typeof WizardState.State, config?: RunnableConfig) {
     console.log("🎙️ Narration Agent: Reading slide content...");
-    const prompt = NARRATION_PROMPT(state.topic, state.genre, state.scriptContent);
+    const prompt = NARRATION_PROMPT(state.topic, state.genre, state.scriptContent, state.language || 'English');
 
     // console.log("🎙️ Narration Agent: Writing scripts for " + state.scriptContent.length + " slides...");
     const response = await llm.invoke([new HumanMessage(prompt)], config);

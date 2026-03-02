@@ -36,7 +36,8 @@ export default function RenderPage() {
         setAudioUrl,
         selectedFont,
         ttsProvider,
-        selectedVoice
+        selectedVoice,
+        narrationLanguage
     } = useStore();
 
     // ── Render mode ──────────────────────────────────────────────────────────
@@ -61,7 +62,6 @@ export default function RenderPage() {
     });
 
     const containerRef = useRef<HTMLDivElement>(null);
-    const hasStartedRef = useRef(false);
 
     // ── Server render state ───────────────────────────────────────────────────
     const [serverJob, setServerJob] = useState<ServerJobState>({
@@ -109,10 +109,8 @@ export default function RenderPage() {
             })
             .catch(err => console.error("Failed to load font CSS", err));
 
-        if (status === 'idle' && !hasStartedRef.current) {
-            hasStartedRef.current = true;
-            setTimeout(startRenderProcess, 500);
-        }
+        // NOTE: We do NOT auto-start rendering here.
+        // The user must explicitly choose Local or Server mode first.
     }, [script, selectedFont]); // Added selectedFont to dependencies to refetch CSS if font changes
 
     const startRenderProcess = async () => {
@@ -134,15 +132,31 @@ export default function RenderPage() {
 
                 const text = slide.narration || slide.title;
 
-                const res = await fetch('/api/tts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text, voice: selectedVoice, provider: ttsProvider })
-                });
+                let url: string;
+                try {
+                    const res = await fetch('/api/tts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text, voice: selectedVoice, provider: ttsProvider, narrationLanguage })
+                    });
 
-                if (!res.ok) throw new Error(`TTS failed for slide ${slide.slide_id}`);
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
+                    if (!res.ok) {
+                        const errBody = await res.text().catch(() => res.status.toString());
+                        console.warn(`TTS failed for slide ${slide.slide_id}: ${errBody}`);
+                        setAudioUrl(slide.slide_id, '', slide.duration || 5);
+                        processed++;
+                        setProgress(Math.round((processed / slides.length) * 100));
+                        continue;
+                    }
+                    const blob = await res.blob();
+                    url = URL.createObjectURL(blob);
+                } catch (fetchErr) {
+                    console.warn(`TTS network error for slide ${slide.slide_id}:`, fetchErr);
+                    setAudioUrl(slide.slide_id, '', slide.duration || 5);
+                    processed++;
+                    setProgress(Math.round((processed / slides.length) * 100));
+                    continue;
+                }
 
                 const audio = new Audio(url);
                 await new Promise((resolve) => {
@@ -268,6 +282,7 @@ export default function RenderPage() {
                     script,
                     voice: selectedVoice,
                     provider: ttsProvider,
+                    narrationLanguage,
                     font: selectedFont,
                     width: 1280,
                     height: 720,
@@ -347,14 +362,14 @@ export default function RenderPage() {
                 style={{
                     position: 'fixed',
                     top: 0,
+                    left: '-9999px',     // Off-screen so frames never bleed through
                     width: '1280px',
                     height: '720px',
-                    zIndex: -9999, // Way behind everything
+                    zIndex: -9999,
                     overflow: 'hidden',
-                    left: 0, // Keep it on screen so it renders
-                    visibility: 'visible', // Explicitly visible
-                    fontFamily: fontConfig.family, // Ensure font is inherited
-                    color: 'initial' // CRITICAL: Reset color to prevent inheriting text-white from parent container
+                    visibility: 'visible', // Must remain visible for html-to-image capture
+                    fontFamily: fontConfig.family,
+                    color: 'initial'
                 }}
             >
                 {renderState.isRendering && currentSlide && activeScript && (

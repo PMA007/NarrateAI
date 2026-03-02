@@ -178,12 +178,14 @@ export const CONTENT_PROMPT = (
   genre: string,
   outline: { title: string, visual_cue: string }[] | string[],
   template: string,
-  researchNotes?: string
+  researchNotes?: string,
+  language: string = 'English'
 ) => `
 You are an expert Slide Content Creator.
 Topic: "${topic}"
 Genre: "${genre}"
 Template: "${template}" (Visual style)
+**Content Language: ${language}** — ALL slide titles, bullets, labels, and text MUST be written in ${language}.
 
 Outline: ${JSON.stringify(outline)}
 Genre Rules:
@@ -221,10 +223,11 @@ Output STRICT JSON (Array of objects):
 `;
 
 // --- 3. NARRATION WRITER ---
-export const NARRATION_PROMPT = (topic: string, genre: string, scriptContent: any[]) => `
+export const NARRATION_PROMPT = (topic: string, genre: string, scriptContent: any[], language: string = 'English') => `
 You are an expert Voiceover Scriptwriter.
 Topic: "${topic}"
 Genre: "${genre}"
+**Narration Language: ${language}** — ALL narration text MUST be written in ${language}.
 Slides: ${JSON.stringify(scriptContent)}
 
 Goal: Write a cohesive, engaging voiceover script for EACH slide.

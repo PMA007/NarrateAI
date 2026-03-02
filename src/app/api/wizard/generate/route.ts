@@ -22,7 +22,7 @@ const NODE_START_LABELS: Record<string, string> = {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { topic, genre, outline, template } = body;
+        const { topic, genre, outline, template, language } = body;
 
         if (!topic || !genre || !outline) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
                     genre,
                     outline,
                     template: template || 'neon',
+                    language: language || 'English',
                     scriptContent: [],
                     narration: [],
                 }, { version: "v2" });

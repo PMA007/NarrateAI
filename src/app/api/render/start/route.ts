@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
 
-        const { script, voice, provider, font, width, height, fps } = body;
+        const { script, voice, provider, narrationLanguage, font, width, height, fps } = body;
 
         if (!script || !script.slides || !Array.isArray(script.slides)) {
             return NextResponse.json(
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
             script,
             voice: voice ?? 'te-IN-MohanNeural',
             provider: provider ?? 'azure',
+            narrationLanguage: narrationLanguage ?? 'te-IN',
             font: font ?? 'NTR',
             width: width ?? 1280,
             height: height ?? 720,

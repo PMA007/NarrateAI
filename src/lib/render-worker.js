@@ -6,6 +6,14 @@
  * Unlike html-to-image/WebCodecs, this uses a pure native `page.screenshot` to 
  * perfectly capture the Chrome compositor, ensuring zero UI artifacts or scrollbars.
  * The raw PNG buffer frames are directly piped into an FFmpeg instance.
+ *
+ * Audio Pipeline (sync-safe):
+ *   1. Fetch TTS → save raw file
+ *   2. Normalise → canonical 22050Hz/stereo/PCM s16le WAV (eliminates encoder delays)
+ *   3. ffprobe normalised file → exact decoded duration
+ *   4. Build timeline from probed durations (NOT schema `slide.duration`)
+ *   5. Concat all normalised clips into one combined WAV
+ *   6. Mux combined WAV + video frames → MP4
  */
 
 const puppeteer = require('puppeteer');
@@ -14,7 +22,12 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-const { PassThrough } = require('stream');
+const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const Ffmpeg = require('fluent-ffmpeg');
+Ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+Ffmpeg.setFfprobePath(ffprobeInstaller.path);
 
 const jobId = process.argv[2];
 
@@ -52,6 +65,95 @@ function writeStatus(update) {
     } catch { /* ignore */ }
 }
 
+// ── Audio helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Probe the exact decoded duration of an audio file using ffprobe.
+ * Always probe a NORMALISED PCM file for accurate results.
+ */
+function getAudioDuration(filePath) {
+    return new Promise((resolve) => {
+        Ffmpeg.ffprobe(filePath, (err, metadata) => {
+            if (err || !metadata?.format?.duration) {
+                console.warn(`[worker] ffprobe failed for ${path.basename(filePath)}: ${err?.message ?? 'no duration'} — fallback 5s`);
+                resolve(5);
+            } else {
+                resolve(parseFloat(String(metadata.format.duration)));
+            }
+        });
+    });
+}
+
+/**
+ * Normalise any audio to canonical 22050Hz/stereo/PCM s16le WAV.
+ * Eliminates encoder delay drift so ffprobe gives exact decoded duration.
+ */
+function normaliseAudio(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+        Ffmpeg()
+            .input(inputPath)
+            .outputOptions(['-c:a', 'pcm_s16le', '-ar', '22050', '-ac', '2'])
+            .output(outputPath)
+            .on('end', () => resolve())
+            .on('error', (err) => reject(new Error(`Normalise failed (${path.basename(inputPath)}): ${err.message}`)))
+            .run();
+    });
+}
+
+/**
+ * Generate a silent PCM WAV of the given duration (fallback for failed TTS).
+ */
+function generateSilence(outputPath, durationSeconds) {
+    return new Promise((resolve, reject) => {
+        Ffmpeg()
+            .input('anullsrc=r=22050:cl=stereo')
+            .inputOptions(['-f', 'lavfi'])
+            .outputOptions(['-t', durationSeconds.toFixed(6), '-c:a', 'pcm_s16le', '-ar', '22050', '-ac', '2'])
+            .output(outputPath)
+            .on('end', () => resolve())
+            .on('error', (err) => reject(new Error(`Silence gen failed: ${err.message}`)))
+            .run();
+    });
+}
+
+/**
+ * Concatenate normalised per-slide PCM WAV clips into one combined WAV.
+ * All inputs must be 22050Hz/stereo/pcm_s16le (guaranteed by normaliseAudio).
+ */
+async function buildCombinedAudio(normPaths, fallbackDurations, combinedPath) {
+    const resolvedPaths = await Promise.all(
+        normPaths.map(async (p, i) => {
+            if (p && fs.existsSync(p)) return p;
+            const silPath = path.join(tmpDir, `silence-${i}.wav`);
+            await generateSilence(silPath, fallbackDurations[i] ?? 5);
+            return silPath;
+        })
+    );
+
+    if (resolvedPaths.length === 1) {
+        fs.copyFileSync(resolvedPaths[0], combinedPath);
+        return;
+    }
+
+    let cmd = Ffmpeg();
+    resolvedPaths.forEach(p => { cmd = cmd.input(p); });
+    const n = resolvedPaths.length;
+    const filterInputs = resolvedPaths.map((_, i) => `[${i}:a]`).join('');
+    const filter = `${filterInputs}concat=n=${n}:v=0:a=1[aout]`;
+
+    await new Promise((resolve, reject) => {
+        cmd
+            .complexFilter(filter)
+            .outputOptions(['-map', '[aout]', '-c:a', 'pcm_s16le', '-ar', '22050', '-ac', '2'])
+            .output(combinedPath)
+            .on('end', () => resolve())
+            .on('error', (err) => reject(new Error(`Audio concat failed: ${err.message}`)))
+            .run();
+    });
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────────
+
 async function main() {
     if (!fs.existsSync(paramsPath)) {
         writeStatus({ status: 'error', message: 'params.json not found' });
@@ -62,47 +164,84 @@ async function main() {
     const width = params.width || 1280;
     const height = params.height || 720;
     const fps = params.fps || 30;
+    const slides = params.script.slides;
 
+    // ── Phase 1: Fetch TTS → Normalise → Probe exact durations ────────────────
+    // Run TTS + normalise in PARALLEL batches for speed (concurrency-limited)
     writeStatus({ status: 'audio', progress: 5, message: 'Generating audio via TTS...' });
 
-    // ── 1. Generate All Audio Files ───────────────────────────────────────────
-    const audioPaths = [];
-    const validSlides = [];
+    const CONCURRENCY = 3; // parallel TTS requests (avoid overwhelming Sarvam API)
+    const normAudioPaths = new Array(slides.length).fill(null);
+    const slideDurations = new Array(slides.length).fill(5);
 
-    // Filter out potential malformed slides if they occur, though our script requires them.
-    for (let i = 0; i < params.script.slides.length; i++) {
-        const slide = params.script.slides[i];
+    async function processSlideAudio(i) {
+        const slide = slides[i];
         const text = slide.narration || slide.title;
-        const outPath = path.join(tmpDir, `audio-${slide.slide_id}.mp3`);
+        const rawPath = path.join(tmpDir, `audio-raw-${slide.slide_id}.wav`);
+        const normPath = path.join(tmpDir, `audio-norm-${slide.slide_id}.wav`);
 
         try {
-            writeStatus({ status: 'audio', progress: Math.round(5 + (i / params.script.slides.length * 15)), message: `Audio ${i + 1}/${params.script.slides.length}...` });
             const buffer = await fetchTTS(text, params.voice, params.provider);
-            fs.writeFileSync(outPath, buffer);
-            audioPaths.push(outPath);
-            validSlides.push(slide);
+            fs.writeFileSync(rawPath, buffer);
+            await normaliseAudio(rawPath, normPath);
+            normAudioPaths[i] = normPath;
+            const dur = await getAudioDuration(normPath);
+            console.log(`[worker] Slide ${slide.slide_id} audio: ${dur.toFixed(3)}s`);
+            slideDurations[i] = dur;
         } catch (err) {
-            console.error(`[worker] Warning: Audio generation failed for slide ${slide.slide_id}`, err);
-            // Push null so we know there's no audio for this slide, but it still has duration
-            audioPaths.push(null);
-            validSlides.push(slide);
+            console.error(`[worker] Audio failed for slide ${slide.slide_id}:`, err.message);
+            normAudioPaths[i] = null;
+            slideDurations[i] = slide.duration || 5;
         }
     }
 
-    const totalDuration = validSlides.reduce((acc, slide) => acc + (slide.duration || 5), 0);
+    // Process in batches of CONCURRENCY
+    for (let batch = 0; batch < slides.length; batch += CONCURRENCY) {
+        const batchEnd = Math.min(batch + CONCURRENCY, slides.length);
+        const promises = [];
+        for (let i = batch; i < batchEnd; i++) {
+            promises.push(processSlideAudio(i));
+        }
+        await Promise.all(promises);
+        const pct = Math.round(5 + (batchEnd / slides.length) * 15);
+        writeStatus({ status: 'audio', progress: pct, message: `Audio ${batchEnd}/${slides.length} done...` });
+    }
+
+    // ── Phase 2: Patch slide durations with PROBED values ─────────────────────
+    // This is CRITICAL for sync: Stage.tsx uses slide.duration to decide which
+    // slide to show at any given currentTime.  If we don't overwrite the original
+    // schema durations with the real audio durations, the video frames will show
+    // the wrong slide relative to the audio.
+    for (let i = 0; i < slides.length; i++) {
+        const old = slides[i].duration;
+        slides[i].duration = slideDurations[i];
+        console.log(`[worker] Slide ${slides[i].slide_id} duration: schema=${old}s → audio=${slideDurations[i].toFixed(3)}s`);
+    }
+
+    const totalDuration = slideDurations.reduce((a, b) => a + b, 0);
     const totalFrames = Math.ceil(totalDuration * fps);
+    console.log(`[worker] Total duration: ${totalDuration.toFixed(3)}s | ${totalFrames} frames`);
 
-    writeStatus({ status: 'rendering', progress: 20, message: 'Launching headless chromium...' });
+    // ── Phase 2b: Build combined audio track ──────────────────────────────────
+    writeStatus({ status: 'audio', progress: 22, message: 'Building combined audio track...' });
+    const combinedAudioPath = path.join(tmpDir, 'combined-audio.wav');
+    await buildCombinedAudio(normAudioPaths, slideDurations, combinedAudioPath);
 
-    // ── 2. Launch headless Chromium ───────────────────────────────────────────
+    writeStatus({ status: 'rendering', progress: 25, message: 'Launching headless Chromium...' });
+
+    // ── Phase 3: Launch Puppeteer ──────────────────────────────────────────────
     const browser = await puppeteer.launch({
-        headless: true, // MUST be true for the server
+        headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--hide-scrollbars', // Ensure no scrollbars exist natively
+            '--hide-scrollbars',
             '--disable-web-security',
+            '--disable-background-timer-throttling',   // prevent tab throttling
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--run-all-compositor-stages-before-draw', // ensure complete paint before screenshot
         ],
         defaultViewport: { width, height }
     });
@@ -120,133 +259,94 @@ async function main() {
         console.log(`[worker] Navigating to auto-render engine...`);
         await page.goto('http://localhost:3000/auto-render', { waitUntil: 'networkidle0' });
 
+        // Force-hide any Next.js dev overlays that might appear in screenshots
+        await page.evaluate(() => {
+            const style = document.createElement('style');
+            style.textContent = `
+                nextjs-portal, [data-nextjs-dialog-overlay], [data-nextjs-toast],
+                #__next-build-indicator, [data-next-mark], nextjs-dev-tools-widget,
+                [class*="nextjs"], [id*="__nextjs"] {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                }
+            `;
+            document.head.appendChild(style);
+        });
+
         writeStatus({ status: 'rendering', progress: 30, message: 'Starting FFmpeg video encoder...' });
 
-        // ── 3. Start FFmpeg Child Process ──────────────────────────────────────────
-        // We use native child_process to pipe buffers directly to ffmpeg without RAM inflation
-
+        // ── Phase 4: Spawn FFmpeg — video frames from stdin, audio from combined WAV ──
+        // PERF: Use JPEG pipe instead of PNG (5-10x faster screenshot + decode)
+        //       Use ultrafast preset (2-3x faster encode at cost of ~10% larger file)
         const ffmpegArgs = [
-            '-y', // Overwrite output
+            '-y',
             '-f', 'image2pipe',
-            '-vcodec', 'png',
+            '-vcodec', 'mjpeg',                  // JPEG input (was: png)
             '-r', fps.toString(),
-            '-i', '-' // Read images from stdin
-        ];
-
-        // Add audio inputs
-        const validAudioPaths = audioPaths.filter(p => p !== null);
-        for (const p of validAudioPaths) {
-            ffmpegArgs.push('-i', p);
-        }
-
-        // Build precise delayed audio mapping using filter_complex
-        let cumulativeTime = 0;
-        const audioMixPairs = []; // { index, delayMs }
-        let currentInputIndex = 1; // 0 is video
-
-        for (let i = 0; i < params.script.slides.length; i++) {
-            const slide = params.script.slides[i];
-            const slideDuration = slide.duration || 5;
-
-            if (audioPaths[i] !== null) {
-                audioMixPairs.push({
-                    index: currentInputIndex, // FFmpeg stream index
-                    delayMs: Math.round(cumulativeTime * 1000)
-                });
-                currentInputIndex++;
-            }
-            cumulativeTime += slideDuration;
-        }
-
-        let audioFilter = '';
-        if (audioMixPairs.length === 1) {
-            audioFilter = `[1:a]adelay=${audioMixPairs[0].delayMs}|${audioMixPairs[0].delayMs}[aout]`;
-        } else if (audioMixPairs.length > 1) {
-            const delays = audioMixPairs.map(a => `[${a.index}:a]adelay=${a.delayMs}|${a.delayMs}[a${a.index}]`).join(';');
-            const combines = audioMixPairs.map(a => `[a${a.index}]`).join('');
-            audioFilter = `${delays};${combines}amix=inputs=${audioMixPairs.length}[aout]`;
-        }
-
-        const outputOptions = [
+            '-i', '-',                           // [0] video frame pipe
+            '-i', combinedAudioPath,             // [1] combined audio (perfectly synced)
+            '-map', '0:v',
+            '-map', '1:a',
             '-c:v', 'libx264',
-            '-preset', 'fast',
+            '-preset', 'ultrafast',              // was: fast — ~2-3x faster encoding
             '-crf', '23',
             '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac',
+            '-b:a', '128k',
             '-movflags', '+faststart',
-            '-t', totalDuration.toString(), // Forcefully trim video to exact slide duration, preventing frozen trailing frames
+            '-t', totalDuration.toFixed(6),      // hard-trim to exact audio length
+            outputPath
         ];
-
-        if (audioMixPairs.length > 0) {
-            outputOptions.push('-c:a', 'aac', '-b:a', '128k');
-            if (audioFilter) {
-                ffmpegArgs.push('-filter_complex', audioFilter);
-                ffmpegArgs.push('-map', '0:v', '-map', '[aout]');
-            } else {
-                ffmpegArgs.push('-map', '0:v', '-map', '1:a');
-            }
-        } else {
-            ffmpegArgs.push('-map', '0:v'); // Video only fallback
-        }
-
-        ffmpegArgs.push(...outputOptions);
-        ffmpegArgs.push(outputPath);
 
         console.log(`[worker] Spawning FFmpeg: ${ffmpegArgs.join(' ')}`);
 
-        ffmpegProc = spawn(ffmpegInstaller.path, ffmpegArgs.flat(), {
-            stdio: ['pipe', 'inherit', 'inherit'] // pipe stdin, inherit stdout/err for logging
+        ffmpegProc = spawn(ffmpegInstaller.path, ffmpegArgs, {
+            stdio: ['pipe', 'inherit', 'inherit']
         });
 
         ffmpegProc.on('error', (err) => {
-            console.error('[worker] FFmpeg error:', err);
+            console.error('[worker] FFmpeg spawn error:', err);
         });
 
-        // ── 4. Main Render Loop ────────────────────────────────────────────────
-        // Capture frames and pipe to ffmpeg directly.
-
+        // ── Phase 5: Render loop — capture every frame → pipe to FFmpeg stdin ──
         for (let frameNum = 0; frameNum < totalFrames; frameNum++) {
-
-            // 1. Tell browser to seek
             await page.evaluate(async (f) => {
                 if (window.seekToFrame) await window.seekToFrame(f);
             }, frameNum);
 
-            // 2. Wait for React to finish rendering
             await page.waitForFunction('window.__FRAME_READY__ === true', { timeout: 10000 });
 
-            // 3. Take perfect compositor screenshot
             const buffer = await page.screenshot({
-                type: 'png',
+                type: 'jpeg',
+                quality: 90,
                 clip: { x: 0, y: 0, width, height }
             });
 
-            // 4. Pipe to FFmpeg stdin
             if (ffmpegProc.stdin.writable) {
                 const canWrite = ffmpegProc.stdin.write(buffer);
                 if (!canWrite) {
                     await new Promise(r => ffmpegProc.stdin.once('drain', r));
                 }
             } else {
-                break; // stdin closed early (ffmpeg crashed/completed)
+                break;
             }
 
-            // Status updates
-            if (frameNum % 10 === 0 || frameNum === totalFrames - 1) {
+            if (frameNum % 30 === 0 || frameNum === totalFrames - 1) {
                 const prog = 30 + Math.floor((frameNum / totalFrames) * 65);
                 writeStatus({
                     status: 'rendering',
                     progress: prog,
-                    message: `Rendering frame ${frameNum}/${totalFrames}`
+                    message: `Rendering frame ${frameNum + 1}/${totalFrames}`
                 });
             }
         }
 
-        // Close stdin so ffmpeg knows there are no more frames and finalizes MP4
         ffmpegProc.stdin.end();
-
         writeStatus({ status: 'rendering', progress: 95, message: 'Finalizing MP4 via FFmpeg...' });
 
-        // Wait for FFmpeg to gracefully finish
         await new Promise((resolve, reject) => {
             ffmpegProc.on('close', (code) => {
                 if (code === 0) resolve();
@@ -263,9 +363,6 @@ async function main() {
         writeStatus({ status: 'error', progress: 0, message: err.message });
     } finally {
         if (browser) await browser.close().catch(() => { });
-        // In this architecture, we wrote output directly to the job dir. 
-        // We do NOT need to POST back to the server. The /api/render/status 
-        // will now just read the `complete` status directly from `status.json`.
         process.exit();
     }
 }

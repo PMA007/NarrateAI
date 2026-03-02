@@ -48,7 +48,8 @@ export interface RenderParams {
         }>;
     };
     voice: string;
-    provider: 'azure' | 'google' | 'gemini';
+    provider: 'azure' | 'google' | 'gemini' | 'sarvam';
+    narrationLanguage?: string;
     font: string;
     width?: number;
     height?: number;

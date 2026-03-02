@@ -21,7 +21,8 @@ export const NanoBannaCommonSlide: React.FC<SlideComponentProps> = ({
         return localTime;
     };
 
-    const titleAnim = useDynamicAnimation(getTime('title'), 0, elementAnimations?.['title']);
+    const titleAnim = useDynamicAnimation(getTime('title'), 0,
+        elementAnimations?.['title'] ?? { type: 'slide_up', duration: 0.7, delay: 0 });
 
     return (
         <g>
@@ -38,7 +39,7 @@ export const NanoBannaCommonSlide: React.FC<SlideComponentProps> = ({
                     transform={`translate(${titleAnim.x}, ${titleAnim.y}) scale(${titleAnim.scale})`}
                     opacity={titleAnim.opacity}
                 >
-                    <foreignObject x={0} y={0} width={width - 120} height={100}>
+                    <foreignObject x={0} y={0} width={width - 120} height={160}>
                         <h2 style={{
                             fontFamily: theme.fonts.heading,
                             color: theme.colors.text.primary,
@@ -54,14 +55,18 @@ export const NanoBannaCommonSlide: React.FC<SlideComponentProps> = ({
                 </g>
 
                 {/* Bullets */}
-                <g transform="translate(0, 140)">
+                <g transform="translate(0, 180)">
                     {bullets.map((bullet, i) => {
                         const bulletId = `bullet-${i}`;
-                        const anim = useDynamicAnimation(getTime(bulletId), 0.3 + (i * 0.15), elementAnimations?.[bulletId]);
+                        const anim = useDynamicAnimation(getTime(bulletId), 0.3 + (i * 0.15),
+                            elementAnimations?.[bulletId] ?? { type: 'slide_up', duration: 0.5, delay: 0 });
+                        
+                        // Dynamic spacing logic based on index
+                        const yPos = anim.y + (i * 110); 
 
                         return (
-                            <g key={i} transform={`translate(${anim.x}, ${anim.y + (i * 80)}) scale(${anim.scale})`} opacity={anim.opacity}>
-                                <foreignObject x={0} y={0} width={width - 120} height={60}>
+                            <g key={i} transform={`translate(${anim.x}, ${yPos}) scale(${anim.scale})`} opacity={anim.opacity}>
+                                <foreignObject x={0} y={0} width={width - 120} height={100}>
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'center',

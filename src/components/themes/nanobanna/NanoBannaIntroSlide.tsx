@@ -18,8 +18,10 @@ export const NanoBannaIntroSlide: React.FC<SlideComponentProps> = ({
         return localTime;
     };
 
-    const titleAnim = useDynamicAnimation(getTime('title'), 0, elementAnimations?.['title']);
-    const subtitleAnim = useDynamicAnimation(getTime('subtitle'), 0.5, elementAnimations?.['subtitle']);
+    const titleAnim = useDynamicAnimation(getTime('title'), 0,
+        elementAnimations?.['title'] ?? { type: 'slide_up', duration: 0.7, delay: 0 });
+    const subtitleAnim = useDynamicAnimation(getTime('subtitle'), 0.5,
+        elementAnimations?.['subtitle'] ?? { type: 'fade', duration: 0.6, delay: 0 });
 
     return (
         <g>
@@ -36,7 +38,7 @@ export const NanoBannaIntroSlide: React.FC<SlideComponentProps> = ({
                     transform={`translate(${titleAnim.x}, ${titleAnim.y - 40}) scale(${titleAnim.scale})`}
                     opacity={titleAnim.opacity}
                 >
-                    <foreignObject x={-400} y={-100} width={800} height={200}>
+                    <foreignObject x={-800} y={-200} width={1600} height={400}>
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -52,7 +54,8 @@ export const NanoBannaIntroSlide: React.FC<SlideComponentProps> = ({
                                 margin: 0,
                                 letterSpacing: '-2px',
                                 lineHeight: 1.1,
-                                textShadow: '0 4px 30px rgba(0,0,0,0.5)'
+                                textShadow: '0 4px 30px rgba(0,0,0,0.5)',
+                                overflow: 'visible' /* Let it flow */
                             }}>
                                 {title}
                             </h1>
@@ -62,10 +65,10 @@ export const NanoBannaIntroSlide: React.FC<SlideComponentProps> = ({
 
                 {/* Subtitle / Tagline */}
                 <g
-                    transform={`translate(${subtitleAnim.x}, ${subtitleAnim.y + 60}) scale(${subtitleAnim.scale})`}
+                    transform={`translate(${subtitleAnim.x}, ${subtitleAnim.y + 120}) scale(${subtitleAnim.scale})`}
                     opacity={subtitleAnim.opacity}
                 >
-                    <foreignObject x={-400} y={0} width={800} height={100}>
+                    <foreignObject x={-600} y={0} width={1200} height={150}>
                         <div style={{ textAlign: 'center' }}>
                             <span style={{
                                 fontFamily: theme.fonts.mono,
