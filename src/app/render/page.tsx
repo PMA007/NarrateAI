@@ -35,6 +35,7 @@ export default function RenderPage() {
         audioUrls,
         setAudioUrl,
         selectedFont,
+        fontScale, // Added fontScale
         ttsProvider,
         selectedVoice,
         narrationLanguage
@@ -401,6 +402,7 @@ export default function RenderPage() {
                             width={1280}
                             height={720}
                             fontFamily={fontConfig.family}
+                            fontScale={fontScale}
                             fontUrl={fontConfig.url}
                             fontCss={fontCss}
                             // Pass Localized Animations

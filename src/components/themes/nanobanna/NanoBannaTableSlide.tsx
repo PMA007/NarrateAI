@@ -37,7 +37,7 @@ export const NanoBannaTableSlide: React.FC<SlideComponentProps> = ({
                     <h2 style={{
                         fontFamily: theme.fonts.heading,
                         color: theme.colors.text.primary,
-                        fontSize: '48px',
+                        fontSize: (theme.textSizes?.h2 || 48) + 'px',
                         fontWeight: 700,
                         margin: 0,
                         borderBottom: `2px solid ${theme.colors.surface}`,
@@ -66,9 +66,9 @@ export const NanoBannaTableSlide: React.FC<SlideComponentProps> = ({
                                 background: theme.colors.surface,
                                 color: theme.colors.primary,
                                 padding: '16px',
-                                fontFamily: theme.fonts.mono,
+                                fontFamily: theme.fonts.heading,
                                 fontWeight: 'bold',
-                                fontSize: '18px',
+                                fontSize: (theme.textSizes?.body || 18) + 'px',
                                 borderBottom: `2px solid ${theme.colors.primary}`
                             }}>
                                 {header}
@@ -83,7 +83,7 @@ export const NanoBannaTableSlide: React.FC<SlideComponentProps> = ({
                                     color: theme.colors.text.primary,
                                     padding: '16px',
                                     fontFamily: theme.fonts.body,
-                                    fontSize: '18px',
+                                    fontSize: (theme.textSizes?.body || 18) + 'px',
                                     borderTop: '1px solid rgba(255,255,255,0.05)'
                                 }}>
                                     {cell}

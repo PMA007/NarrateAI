@@ -45,7 +45,7 @@ export const NanoBannaFlowchartSlide: React.FC<SlideComponentProps> = ({
                     <h2 style={{
                         fontFamily: theme.fonts.heading,
                         color: theme.colors.text.primary,
-                        fontSize: '48px',
+                        fontSize: (theme.textSizes?.h2 || 48) + 'px',
                         fontWeight: 700,
                         margin: 0,
                         borderBottom: `2px solid ${theme.colors.surface}`,
@@ -94,7 +94,7 @@ export const NanoBannaFlowchartSlide: React.FC<SlideComponentProps> = ({
                                         <span style={{
                                             fontFamily: theme.fonts.body,
                                             color: theme.colors.text.primary,
-                                            fontSize: '20px',
+                                            fontSize: (theme.textSizes?.body || 20) + 'px',
                                             textAlign: 'center',
                                             fontWeight: 600
                                         }}>

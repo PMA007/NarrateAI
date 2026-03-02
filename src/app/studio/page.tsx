@@ -18,7 +18,7 @@ function StudioContent() {
         isPlaying, togglePlay, currentTime, totalDuration, seek,
         script, audioUrls, setScript, setAudioUrl,
         generationState, setGenerationState, setAudioStatus,
-        renderMode, setRenderMode, selectedFont, setFont, selectedVoice, ttsProvider, narrationLanguage, suggestions
+        renderMode, setRenderMode, selectedFont, setFont, fontScale, setFontScale, selectedVoice, ttsProvider, narrationLanguage, suggestions
     } = useStore();
 
 
@@ -311,6 +311,22 @@ function StudioContent() {
                         <Sparkles className="w-5 h-5" />
                     </button>
                     <div className="h-6 w-px bg-neutral-800"></div>
+
+                    {/* Size Selector */}
+                    <div className="flex items-center space-x-1 text-xs text-neutral-400 bg-neutral-900 border border-neutral-700 rounded-md px-2 py-1">
+                        <span className="font-mono">A</span>
+                        <input
+                            type="range"
+                            min="0.5"
+                            max="2.0"
+                            step="0.1"
+                            value={fontScale || 1.0}
+                            onChange={(e) => setFontScale(parseFloat(e.target.value))}
+                            className="w-16 accent-cyan-500 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                            title={`Font Scale: ${fontScale}x`}
+                        />
+                        <span className="font-mono text-lg">A</span>
+                    </div>
 
                     {/* Font Selector */}
                     <select

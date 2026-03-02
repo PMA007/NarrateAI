@@ -9,13 +9,17 @@ export interface SlideContent {
     table_data?: { headers: string[]; rows: string[][] };
     code_snippet?: string; // New: For coding explanations
     highlight_lines?: number[]; // New: For highlighting specific lines
+    network_data?: { // New: For graph network visualizations
+        nodes: { id: string; label: string; layer?: number; x?: number; y?: number; type?: 'input' | 'hidden' | 'output' | 'default' }[];
+        edges: { source: string; target: string; label?: string; type?: 'directed' | 'undirected' | 'bidirectional'; curve?: number }[];
+    };
 }
 
 export interface Slide {
     slide_id: number;
     title: string;
     subtitle?: string; // Tagline for intro slides
-    layout: 'title' | 'text_features' | 'chart_bar' | 'chart_line' | 'process_flow' | 'columns_3' | 'grid_cards' | 'comparison' | 'table' | 'coding';
+    layout: 'title' | 'text_features' | 'chart_bar' | 'chart_line' | 'process_flow' | 'columns_3' | 'grid_cards' | 'comparison' | 'table' | 'coding' | 'network';
     content: SlideContent;
     narration: string;
     duration?: number; // Calculated after TTS
@@ -57,6 +61,9 @@ interface AppState {
     // Font State
     selectedFont: FontKey;
     setFont: (font: FontKey) => void;
+    // Size State
+    fontScale: number; // 0.8 to 1.5
+    setFontScale: (scale: number) => void;
 
     // Render Settings
     renderMode: 'default' | 'high-quality';
@@ -111,6 +118,8 @@ export const useStore = create<AppState>((set) => ({
     currentTime: 0,
     totalDuration: 0,
     selectedFont: 'Modern', // Default
+    fontScale: 1.0,
+    setFontScale: (scale) => set({ fontScale: scale }),
     activeElementId: null,
     elementStyles: {},
     elementAnimations: {},

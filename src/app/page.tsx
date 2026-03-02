@@ -524,6 +524,7 @@ export default function Home() {
                                                 <option value="story">Cinematic Story</option>
                                             </select>
                                         </div>
+                                        <div className="flex flex-col gap-2">
                                         <div className="flex items-end">
                                             <button
                                                 onClick={handleTopicSubmit}
@@ -535,6 +536,7 @@ export default function Home() {
                                             </button>
                                         </div>
                                     </div>
+                                </div>
                                 </div>
                             </motion.div>
                         )}

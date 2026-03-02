@@ -49,7 +49,7 @@ export const NanoBannaIntroSlide: React.FC<SlideComponentProps> = ({
                             <h1 style={{
                                 fontFamily: theme.fonts.heading,
                                 color: theme.colors.text.primary,
-                                fontSize: '80px',
+                                fontSize: (theme.textSizes?.h1 || 80) + 'px',
                                 fontWeight: 800,
                                 margin: 0,
                                 letterSpacing: '-2px',
@@ -73,7 +73,7 @@ export const NanoBannaIntroSlide: React.FC<SlideComponentProps> = ({
                             <span style={{
                                 fontFamily: theme.fonts.mono,
                                 color: theme.colors.primary,
-                                fontSize: '24px',
+                                fontSize: (theme.textSizes?.body || 24) + 'px',
                                 backgroundColor: 'rgba(255, 215, 0, 0.1)',
                                 padding: '8px 24px',
                                 borderRadius: '4px',

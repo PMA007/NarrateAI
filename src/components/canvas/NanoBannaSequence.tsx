@@ -1,8 +1,6 @@
 import React from 'react';
 import { Slide as SlideType } from '@/lib/store';
-import { nanobannaTheme, nanobannaSlides } from '@/components/themes/nanobanna';
-import { getSlideCategory, SlideComponentProps } from '@/components/themes/types';
-import { FONT_OPTIONS } from '@/lib/fonts';
+import { SlideRenderer } from './SlideRenderer';
 import { NanoBannaTemplate } from '@/components/templates/NanoBannaTemplate'; // Import Template
 
 interface SequenceProps {
@@ -16,6 +14,7 @@ interface SequenceProps {
     fontCss?: string; // Pre-fetched CSS text
     elementStyles?: Record<string, any>;
     elementAnimations?: Record<string, any>;
+    fontScale?: number;
 }
 
 export const NanoBannaSequence: React.FC<SequenceProps> = ({
@@ -24,32 +23,13 @@ export const NanoBannaSequence: React.FC<SequenceProps> = ({
     localTime,
     width,
     height,
-    fontFamily: propFontFamily, // The font selected by user in UI
+    fontFamily,
     fontUrl,
     fontCss,
     elementStyles = {},
-    elementAnimations = {}
+    elementAnimations = {},
+    fontScale = 1.0
 }) => {
-    // 1. Determine Category
-    const category = getSlideCategory(slide, index);
-
-    // 2. Select Component
-    const SlideComponent = nanobannaSlides[category] || nanobannaSlides['common'];
-
-    const theme = nanobannaTheme;
-
-    const props: SlideComponentProps = {
-        slide,
-        index,
-        localTime,
-        width,
-        height,
-        fontFamily: theme.fonts.body, // Use theme font
-        theme: nanobannaTheme,
-        elementStyles,
-        elementAnimations
-    };
-
     return (
         <div style={{
             width: width,
@@ -57,6 +37,9 @@ export const NanoBannaSequence: React.FC<SequenceProps> = ({
             position: 'relative',
             overflow: 'hidden'
         }}>
+            {/* Font CSS */}
+            <style>{fontCss}</style>
+
             {/* Template Background Layer */}
             <NanoBannaTemplate />
 
@@ -70,12 +53,24 @@ export const NanoBannaSequence: React.FC<SequenceProps> = ({
             >
                 <defs>
                     <style>
+                        {fontCss}
                         {/* We need to inject the font face if we want it to render in SVG exports reliably */}
                         {`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Fira+Code&display=swap');`}
                     </style>
                 </defs>
 
-                <SlideComponent {...props} />
+                <SlideRenderer
+                    slide={slide}
+                    index={index}
+                    localTime={localTime}
+                    width={width}
+                    height={height}
+                    fontFamily={fontFamily}
+                    fontScale={fontScale}
+                    template="nanobanna"
+                    elementAnimations={elementAnimations}
+                    elementStyles={elementStyles}
+                />
             </svg>
         </div>
     );

@@ -311,18 +311,30 @@ async function main() {
             console.error('[worker] FFmpeg spawn error:', err);
         });
 
+        // CRITICAL: Wait for the React app to fully hydrate and expose the seek function
+        console.log('[worker] Waiting for auto-render engine to be ready...');
+        await page.waitForFunction('typeof window.seekToFrame === "function"', { timeout: 30000 });
+        console.log('[worker] Auto-render engine ready. Starting capture...');
+
         // ── Phase 5: Render loop — capture every frame → pipe to FFmpeg stdin ──
         for (let frameNum = 0; frameNum < totalFrames; frameNum++) {
             await page.evaluate(async (f) => {
-                if (window.seekToFrame) await window.seekToFrame(f);
+                // We know seekToFrame exists now, so we can call it directly
+                // and await the promise which resolves only after frame is painted
+                await window.seekToFrame(f);
             }, frameNum);
 
-            await page.waitForFunction('window.__FRAME_READY__ === true', { timeout: 10000 });
+            // Removed explicit readiness check (waitForFunction) to speed up the loop.
+            // window.seekToFrame is async and awaits the React update + font check itself.
+            // Puppeteer's await page.evaluate(...) won't return until that promise resolves.
+            // The --run-all-compositor-stages-before-draw flag ensures paint is done before screenshot.
 
             const buffer = await page.screenshot({
+                // quality 80 is virtually indistinguishable from 90 for video frames but faster to encode/transmit
                 type: 'jpeg',
-                quality: 90,
-                clip: { x: 0, y: 0, width, height }
+                quality: 80, 
+                clip: { x: 0, y: 0, width, height },
+                // removed optimizeForSpeed as it might cause blank frames on some systems
             });
 
             if (ffmpegProc.stdin.writable) {

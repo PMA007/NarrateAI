@@ -51,6 +51,7 @@ export function Stage({
     const isPlaying = isPreview ? (propIsPlaying ?? false) : store.isPlaying;
     const currentTime = isPreview ? (propCurrentTime ?? 0) : store.currentTime;
     const selectedFont = store.selectedFont; // Use store font for both (user preference)
+    const fontScale = store.fontScale; // Use store scale
     const totalDuration = isPreview ? 0 : store.totalDuration; // Not used for logic here really
 
     const fontConfig = FONT_OPTIONS[selectedFont] || FONT_OPTIONS['Modern'];
@@ -171,8 +172,7 @@ export function Stage({
                             localTime={localTime}
                             width={WIDTH}
                             height={HEIGHT}
-                            fontFamily={fontConfig.family}
-                            template={script?.template || 'neon'}
+                            fontFamily={fontConfig.family}                            fontScale={fontScale}                            template={script?.template || 'neon'}
                             // START FIX: Map global keys (slide-0-title) to local keys (title)
                             elementAnimations={
                                 Object.entries(store.elementAnimations)

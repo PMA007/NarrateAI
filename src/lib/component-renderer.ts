@@ -162,10 +162,12 @@ export class ComponentRenderer {
 
                 // Wait for DOM to settle and fonts to load
                 if (frameIndex === 0) {
-                    await new Promise(r => setTimeout(r, 300));
-                } else if (!this.fast) {
-                    await new Promise(r => setTimeout(r, 50));
+                    // Initial load needs more time to settle fonts and layout
+                    await new Promise(r => setTimeout(r, 200));
                 } else {
+                    // Minimal delay to allow browser event loop to process React updates
+                    // and paint changes before we capture the frame.
+                    // setTimeout(0) is essential for fast rendering to be faster than real-time.
                     await new Promise(r => setTimeout(r, 0));
                 }
 

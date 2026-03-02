@@ -43,7 +43,7 @@ export const NanoBannaCommonSlide: React.FC<SlideComponentProps> = ({
                         <h2 style={{
                             fontFamily: theme.fonts.heading,
                             color: theme.colors.text.primary,
-                            fontSize: '48px',
+                            fontSize: (theme.textSizes?.h2 || 48) + 'px',
                             fontWeight: 700,
                             margin: 0,
                             borderBottom: `2px solid ${theme.colors.surface}`,
@@ -71,7 +71,7 @@ export const NanoBannaCommonSlide: React.FC<SlideComponentProps> = ({
                                         display: 'flex',
                                         alignItems: 'center',
                                         fontFamily: theme.fonts.body,
-                                        fontSize: '24px',
+                                        fontSize: (theme.textSizes?.body || 24) + 'px',
                                         color: theme.colors.text.primary,
                                         backgroundColor: theme.colors.surface,
                                         padding: '15px 20px',

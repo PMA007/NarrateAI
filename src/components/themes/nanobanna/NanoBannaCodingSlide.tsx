@@ -38,7 +38,7 @@ export const NanoBannaCodingSlide: React.FC<SlideComponentProps> = ({
                     <h2 style={{
                         fontFamily: theme.fonts.heading,
                         color: theme.colors.primary,
-                        fontSize: '32px',
+                        fontSize: (theme.textSizes?.h3 || 32) + 'px',
                         fontWeight: 700,
                         margin: 0,
                         lineHeight: 1.3
@@ -60,7 +60,7 @@ export const NanoBannaCodingSlide: React.FC<SlideComponentProps> = ({
                             code={code_snippet || '// No code provided'}
                             highlightLines={highlight_lines || []}
                             theme="dark"
-                            fontSize={18}
+                            fontSize={theme.textSizes?.code || 18}
                         />
                     </div>
                 </foreignObject>

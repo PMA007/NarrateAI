@@ -84,8 +84,15 @@ export default function AutoRenderFramePage() {
             const time = frame / fps;
             setCurrentTime(time);
 
-            // Give React a tick to flush the DOM update to the screen
-            await new Promise(r => setTimeout(r, 0));
+            // Wait for paint: double requestAnimationFrame ensures the browser has composed the frame
+            await new Promise<void>(resolve => {
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        resolve();
+                    });
+                });
+            });
+            
             // Ensure fonts are still fully loaded
             await document.fonts.ready;
 

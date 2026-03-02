@@ -53,7 +53,7 @@ export const NanoBannaGraphSlide: React.FC<SlideComponentProps> = ({
                     <h2 style={{
                         fontFamily: theme.fonts.heading,
                         color: theme.colors.text.primary,
-                        fontSize: '48px',
+                        fontSize: (theme.textSizes?.h2 || 48) + 'px',
                         fontWeight: 700,
                         margin: 0,
                         borderBottom: `2px solid ${theme.colors.surface}`,
@@ -100,8 +100,9 @@ export const NanoBannaGraphSlide: React.FC<SlideComponentProps> = ({
                                 y={y - 10}
                                 textAnchor="middle"
                                 fill={theme.colors.text.primary}
-                                fontFamily={theme.fonts.mono}
-                                fontSize="20"
+                                fontFamily={theme.fonts.body}
+                                fontSize={theme.textSizes?.body || 20}
+                                fontWeight="bold"
                                 opacity={anim.opacity}
                             >
                                 {val}
@@ -113,7 +114,7 @@ export const NanoBannaGraphSlide: React.FC<SlideComponentProps> = ({
                                 textAnchor="middle"
                                 fill={theme.colors.text.secondary}
                                 fontFamily={theme.fonts.body}
-                                fontSize="16"
+                                fontSize={theme.textSizes?.caption || 16}
                             >
                                 {labels[i]}
                             </text>

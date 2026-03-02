@@ -6,6 +6,7 @@ import { NanoBannaCodingSlide } from '@/components/themes/nanobanna/NanoBannaCod
 import { NanoBannaGraphSlide } from '@/components/themes/nanobanna/NanoBannaGraphSlide';
 import { NanoBannaFlowchartSlide } from '@/components/themes/nanobanna/NanoBannaFlowchartSlide';
 import { NanoBannaTableSlide } from '@/components/themes/nanobanna/NanoBannaTableSlide';
+import { NanoBannaNetworkSlide } from '@/components/themes/nanobanna/NanoBannaNetworkSlide';
 
 export const nanobannaTheme: ThemeConfig = {
     colors: {
@@ -42,5 +43,6 @@ export const nanobannaSlides: ThemeSlideRegistry = {
     graph: NanoBannaGraphSlide,
     flowchart: NanoBannaFlowchartSlide,
     table: NanoBannaTableSlide,
+    network: NanoBannaNetworkSlide,
     thankyou: NanoBannaIntroSlide // Reuse Intro for Thank You
 };

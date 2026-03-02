@@ -22,6 +22,13 @@ export interface ThemeConfig {
         body: string;
         mono?: string; // Optional mono font
     };
+    textSizes: {
+        h1: number;
+        h2: number;
+        h3: number;
+        body: number;
+        mono: number;
+    };
     shapes: {
         radius: string;
     };
@@ -45,6 +52,13 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
         fonts: {
             heading: 'Outfit, sans-serif',
             body: 'Inter, sans-serif',
+        },
+        textSizes: {
+            h1: 64,
+            h2: 48,
+            h3: 32,
+            body: 24,
+            mono: 20
         },
         shapes: {
             radius: '16px',

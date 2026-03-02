@@ -12,6 +12,7 @@ export type SlideCategory =
     | 'graph'      // Charts and graphs
     | 'table'      // Table layout
     | 'coding'     // Code explanation
+    | 'network'    // Graph network diagrams
     | 'thankyou';  // Closing/thank you slide
 
 /**
@@ -50,6 +51,7 @@ export interface ThemeSlideRegistry {
     graph: SlideComponent;
     table: SlideComponent;
     coding: SlideComponent;
+    network?: SlideComponent;
     thankyou: SlideComponent;
 }
 
@@ -62,6 +64,11 @@ export function getSlideCategory(slide: SlideType, index: number): SlideCategory
     // Check for coding slide
     if (layout === 'coding' || content.code_snippet) {
         return 'coding';
+    }
+
+    // Check for network graph slide
+    if (layout === 'network' || content.network_data) {
+        return 'network';
     }
 
     // Check for thank you slide (usually last slide with "thank" in title)

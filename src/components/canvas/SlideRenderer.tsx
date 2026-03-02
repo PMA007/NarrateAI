@@ -14,6 +14,7 @@ interface SlideRendererProps {
     width: number;
     height: number;
     fontFamily: string;
+    fontScale?: number; // Added scale
     template?: ThemeType;
     activeElementId?: string | null;
     onElementClick?: (elementId: string, value: string) => void;
@@ -34,6 +35,7 @@ export function SlideRenderer({
     width,
     height,
     fontFamily,
+    fontScale = 1.0, 
     template = 'neon',
     onElementClick,
     elementStyles = {},
@@ -48,17 +50,32 @@ export function SlideRenderer({
     // Override fonts if fontFamily prop is provided
     // This allows the Studio font selector to control all slides
     const theme = React.useMemo(() => {
-        if (!fontFamily) return baseTheme;
+        let base = baseTheme;
+        if (!base.textSizes) {
+            // Polyfill if theme lacks textSizes
+             base = { ...base, textSizes: { h1: 64, h2: 48, h3: 32, body: 24, mono: 20 } };
+        }
+
+        const scaledSizes = {
+             h1: base.textSizes.h1 * fontScale,
+             h2: base.textSizes.h2 * fontScale,
+             h3: base.textSizes.h3 * fontScale,
+             body: base.textSizes.body * fontScale,
+             mono: base.textSizes.mono * fontScale
+        };
+
+        if (!fontFamily) return { ...base, textSizes: scaledSizes };
         return {
-            ...baseTheme,
+            ...base,
+            textSizes: scaledSizes,
             fonts: {
-                ...baseTheme.fonts,
+                ...base.fonts,
                 heading: fontFamily,
                 body: fontFamily,
                 // Do not override mono unless requested? Usually mono should stay mono for code.
             }
         };
-    }, [baseTheme, fontFamily]);
+    }, [baseTheme, fontFamily, fontScale]);
 
     // Determine which slide category to use
     const category = getSlideCategory(slide, index);
