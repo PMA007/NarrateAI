@@ -3,13 +3,25 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
-import { Loader2, Download, AlertCircle, CheckCircle2, ArrowLeft, Info } from 'lucide-react';
+import { Loader2, Download, AlertCircle, CheckCircle2, ArrowLeft, Info, Monitor, Cloud, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { ComponentRenderer, RenderState } from '@/lib/component-renderer';
 import { detectPlatform, PlatformInfo } from '@/lib/universal-renderer';
 import { FONT_OPTIONS, FontKey } from '@/lib/fonts';
 import { SlideRenderer } from '@/components/canvas/SlideRenderer';
 import dynamic from 'next/dynamic';
+
+type RenderMode = 'choose' | 'local' | 'server';
+
+type ServerJobStatus = 'queued' | 'audio' | 'rendering' | 'complete' | 'error';
+
+interface ServerJobState {
+    jobId: string | null;
+    status: ServerJobStatus | null;
+    progress: number;
+    message: string;
+    queuePosition: number;
+}
 
 const NeonSequence = dynamic(() => import('@/components/canvas/NeonSequence').then(m => m.NeonSequence), { ssr: false });
 const RetroSequence = dynamic(() => import('@/components/canvas/RetroSequence').then(m => m.RetroSequence), { ssr: false });
@@ -27,7 +39,10 @@ export default function RenderPage() {
         selectedVoice
     } = useStore();
 
-    // Local state
+    // ── Render mode ──────────────────────────────────────────────────────────
+    const [renderMode, setRenderMode] = useState<RenderMode>('choose');
+
+    // ── Local render state ───────────────────────────────────────────────────
     const [status, setStatus] = useState<'idle' | 'audio' | 'loading' | 'rendering' | 'complete' | 'error'>('idle');
     const [progress, setProgress] = useState(0);
     const [errorMsg, setErrorMsg] = useState('');
@@ -45,10 +60,18 @@ export default function RenderPage() {
         progress: 0
     });
 
-    // We need a ref to access the container synchronously in the render loop if possible,
-    // although the renderer class will call getContainer().
     const containerRef = useRef<HTMLDivElement>(null);
     const hasStartedRef = useRef(false);
+
+    // ── Server render state ───────────────────────────────────────────────────
+    const [serverJob, setServerJob] = useState<ServerJobState>({
+        jobId: null,
+        status: null,
+        progress: 0,
+        message: '',
+        queuePosition: 0,
+    });
+    const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         if (!script) {
@@ -231,6 +254,63 @@ export default function RenderPage() {
         }
     };
 
+    // ── Server-side render: start job ─────────────────────────────────────────
+    const startServerRender = async () => {
+        if (!script) return;
+        setRenderMode('server');
+        setServerJob(prev => ({ ...prev, status: 'queued', message: 'Submitting job to server...', progress: 0 }));
+
+        try {
+            const res = await fetch('/api/render/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    script,
+                    voice: selectedVoice,
+                    provider: ttsProvider,
+                    font: selectedFont,
+                    width: 1280,
+                    height: 720,
+                    fps: 30,
+                }),
+            });
+
+            if (!res.ok) throw new Error(`Server error: ${res.status}`);
+            const { jobId } = await res.json();
+
+            setServerJob(prev => ({ ...prev, jobId, message: 'Job queued. Waiting to start...' }));
+
+            // Start polling
+            pollIntervalRef.current = setInterval(async () => {
+                try {
+                    const pollRes = await fetch(`/api/render/status?jobId=${jobId}`);
+                    if (!pollRes.ok) return;
+                    const data = await pollRes.json();
+
+                    setServerJob(prev => ({
+                        ...prev,
+                        status: data.status,
+                        progress: data.progress ?? 0,
+                        message: data.message ?? '',
+                        queuePosition: data.queuePosition ?? 0,
+                    }));
+
+                    if (data.status === 'complete' || data.status === 'error') {
+                        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+                    }
+                } catch { /* network blip, keep polling */ }
+            }, 2000);
+
+        } catch (err: any) {
+            setServerJob(prev => ({ ...prev, status: 'error', message: err.message }));
+        }
+    };
+
+    // Cleanup polling on unmount
+    useEffect(() => {
+        return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
+    }, []);
+
     if (!script) return null;
 
     const fontConfig = FONT_OPTIONS[selectedFont as FontKey] || FONT_OPTIONS['Modern'];
@@ -249,7 +329,7 @@ export default function RenderPage() {
 
     return (
         <div className="min-h-screen bg-neutral-950 text-white p-8 font-sans selection:bg-cyan-500/30">
-            {/* Font Loader - Inline Style to prevent CORS errors in html-to-image */}
+            {/* Font Loader */}
             {fontCss ? (
                 <style>{fontCss}</style>
             ) : (
@@ -342,87 +422,256 @@ export default function RenderPage() {
                     </Link>
                 </div>
 
-                {status === 'error' && (
-                    <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-4 flex items-center gap-4 text-red-200 mb-6">
-                        <AlertCircle className="w-6 h-6 flex-shrink-0" />
-                        <p>{errorMsg}</p>
-                    </div>
-                )}
-
-                {platformInfo?.warnings && platformInfo.warnings.length > 0 && status !== 'error' && (
-                    <div className="bg-amber-500/10 border border-amber-500/50 rounded-xl p-4 text-amber-200 mb-6">
-                        <p className="text-sm">{platformInfo.warnings.join(' ')}</p>
-                    </div>
-                )}
-
-                <div className="space-y-8">
-                    {/* Audio Step */}
-                    <div className={`space-y-2 transition-opacity ${status === 'audio' ? 'opacity-100' : 'opacity-50'}`}>
-                        <div className="flex justify-between items-center text-sm font-medium">
-                            <span className="flex items-center gap-2">
-                                {status === 'audio' && <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />}
-                                {(status !== 'idle' && status !== 'audio') && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                                Generating Audio
-                            </span>
-                            <span>{status === 'audio' ? `${progress}%` : (status === 'idle' ? '0%' : '100%')}</span>
+                {/* ── MODE PICKER ─────────────────────────────────────────── */}
+                {renderMode === 'choose' && (
+                    <div className="space-y-6">
+                        <div className="text-center">
+                            <h1 className="text-2xl font-bold text-white">Export Video</h1>
+                            <p className="text-neutral-400 mt-2 text-sm">Choose how you want to render your presentation</p>
                         </div>
-                        <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-cyan-500 transition-all duration-300 ease-out"
-                                style={{ width: `${status === 'audio' ? progress : (status !== 'idle' ? 100 : 0)}%` }}
-                            />
-                        </div>
-                    </div>
 
-                    {/* Rendering Step */}
-                    <div className={`space-y-2 transition-opacity ${status === 'rendering' || status === 'loading' ? 'opacity-100' : 'opacity-50'}`}>
-                        <div className="flex justify-between items-center text-sm font-medium">
-                            <span className="flex items-center gap-2">
-                                {status === 'rendering' && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
-                                {status === 'complete' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                                {statusMessage || 'Rendering Video'}
-                            </span>
-                            <span>
-                                {status === 'rendering' ? `${progress}%` :
-                                    (status === 'complete' ? '100%' : '0%')}
-                            </span>
-                        </div>
-                        <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-blue-500 transition-all duration-300 ease-out"
-                                style={{
-                                    width: `${status === 'rendering' ? progress :
-                                        (status === 'complete' ? 100 : (status === 'loading' ? 5 : 0))}%`
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {/* Local option */}
+                            <button
+                                onClick={() => {
+                                    setRenderMode('local');
+                                    setTimeout(startRenderProcess, 200);
                                 }}
-                            />
+                                className="group relative flex flex-col gap-4 p-6 rounded-2xl border border-neutral-700 bg-neutral-900/60 hover:border-cyan-500/60 hover:bg-neutral-800/80 transition-all duration-200 text-left"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
+                                        <Monitor className="w-5 h-5 text-cyan-400" />
+                                    </div>
+                                    <span className="font-semibold text-white">Local Rendering</span>
+                                </div>
+                                <p className="text-sm text-neutral-400">Renders in your browser using WebCodecs. Fast for short videos. Requires Chrome or Edge 94+.</p>
+                                <div className="flex gap-2 mt-1">
+                                    <span className="text-xs bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full px-2 py-0.5">WebCodecs</span>
+                                    <span className="text-xs bg-neutral-800 text-neutral-400 border border-neutral-700 rounded-full px-2 py-0.5">Chrome/Edge only</span>
+                                </div>
+                            </button>
+
+                            {/* Server option */}
+                            <button
+                                onClick={startServerRender}
+                                className="group relative flex flex-col gap-4 p-6 rounded-2xl border border-neutral-700 bg-neutral-900/60 hover:border-violet-500/60 hover:bg-neutral-800/80 transition-all duration-200 text-left"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
+                                        <Cloud className="w-5 h-5 text-violet-400" />
+                                    </div>
+                                    <span className="font-semibold text-white">Server Rendering</span>
+                                </div>
+                                <p className="text-sm text-neutral-400">Rendered on our server using FFmpeg. Works on any browser or device. No GPU required.</p>
+                                <div className="flex gap-2 mt-1">
+                                    <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-full px-2 py-0.5">FFmpeg</span>
+                                    <span className="text-xs bg-neutral-800 text-neutral-400 border border-neutral-700 rounded-full px-2 py-0.5">Any browser</span>
+                                </div>
+                            </button>
                         </div>
                     </div>
-                </div>
+                )}
 
-                {/* Completion State */}
-                {status === 'complete' && videoUrl && (
-                    <div className="mt-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                        <video
-                            src={videoUrl}
-                            controls
-                            className="w-full aspect-video rounded-xl shadow-lg border border-neutral-800 mb-6"
-                        />
-                        <div className="flex gap-4">
-                            <a
-                                href={videoUrl}
-                                download={`${script.slides[0]?.title || 'video'}.mp4`}
-                                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-cyan-500/20"
-                            >
-                                <Download className="w-5 h-5" />
-                                Download Video
-                            </a>
+                {/* ── SERVER RENDER UI ─────────────────────────────────────── */}
+                {renderMode === 'server' && (
+                    <div className="space-y-8">
+                        <div className="flex items-center gap-3">
+                            <Cloud className="w-5 h-5 text-violet-400" />
+                            <h2 className="font-semibold text-white">Server Rendering</h2>
+                            {serverJob.status !== 'complete' && serverJob.status !== 'error' && (
+                                <Loader2 className="w-4 h-4 text-violet-400 animate-spin ml-auto" />
+                            )}
                         </div>
-                        <div className="mt-4 p-4 bg-neutral-900/50 rounded-lg border border-neutral-800 text-sm text-neutral-400 flex items-start gap-3">
-                            <Info className="w-5 h-5 flex-shrink-0 text-cyan-500" />
-                            <p>
-                                Video rendered using high-fidelity DOM capture.
-                            </p>
+
+                        {/* Queue position banner */}
+                        {serverJob.queuePosition > 0 && serverJob.status === 'queued' && (
+                            <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-amber-300">
+                                <Clock className="w-4 h-4 flex-shrink-0" />
+                                <span className="text-sm">Position <strong>{serverJob.queuePosition}</strong> in queue. Your job will start shortly.</span>
+                            </div>
+                        )}
+
+                        {/* Progress steps */}
+                        <div className="space-y-5">
+                            {/* Audio step */}
+                            <div className={`space-y-2 transition-opacity ${serverJob.status === 'audio' ? 'opacity-100' : serverJob.status === 'queued' ? 'opacity-40' : 'opacity-60'}`}>
+                                <div className="flex justify-between items-center text-sm font-medium">
+                                    <span className="flex items-center gap-2">
+                                        {serverJob.status === 'audio' && <Loader2 className="w-4 h-4 animate-spin text-violet-400" />}
+                                        {(serverJob.status === 'rendering' || serverJob.status === 'complete') && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                        🎙️ Generating Audio
+                                    </span>
+                                    <span className="text-neutral-400">
+                                        {serverJob.status === 'audio' ? `${serverJob.progress}%` :
+                                            (serverJob.status === 'rendering' || serverJob.status === 'complete') ? '100%' : '–'}
+                                    </span>
+                                </div>
+                                <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-violet-500 transition-all duration-500 ease-out rounded-full"
+                                        style={{
+                                            width: `${serverJob.status === 'audio' ? serverJob.progress :
+                                                (serverJob.status === 'rendering' || serverJob.status === 'complete') ? 100 : 0
+                                                }%`
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Rendering step */}
+                            <div className={`space-y-2 transition-opacity ${serverJob.status === 'rendering' ? 'opacity-100' : serverJob.status === 'complete' ? 'opacity-60' : 'opacity-40'}`}>
+                                <div className="flex justify-between items-center text-sm font-medium">
+                                    <span className="flex items-center gap-2">
+                                        {serverJob.status === 'rendering' && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
+                                        {serverJob.status === 'complete' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                        🎬 Rendering & Encoding
+                                    </span>
+                                    <span className="text-neutral-400">
+                                        {serverJob.status === 'rendering' ? `${serverJob.progress}%` :
+                                            serverJob.status === 'complete' ? '100%' : '–'}
+                                    </span>
+                                </div>
+                                <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-blue-500 transition-all duration-500 ease-out rounded-full"
+                                        style={{
+                                            width: `${serverJob.status === 'rendering' ? serverJob.progress :
+                                                serverJob.status === 'complete' ? 100 : 0
+                                                }%`
+                                        }}
+                                    />
+                                </div>
+                            </div>
                         </div>
+
+                        {/* Status message */}
+                        {serverJob.message && serverJob.status !== 'complete' && serverJob.status !== 'error' && (
+                            <p className="text-sm text-neutral-400 text-center">{serverJob.message}</p>
+                        )}
+
+                        {/* Error */}
+                        {serverJob.status === 'error' && (
+                            <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 flex items-center gap-3 text-red-300">
+                                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                                <p className="text-sm">{serverJob.message}</p>
+                            </div>
+                        )}
+
+                        {/* Complete — Download button */}
+                        {serverJob.status === 'complete' && serverJob.jobId && (
+                            <div className="mt-4 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
+                                <div className="flex items-center gap-2 text-green-400">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <span className="font-semibold">Your video is ready!</span>
+                                </div>
+                                <a
+                                    href={`/api/render/download?jobId=${serverJob.jobId}`}
+                                    download
+                                    className="w-full bg-gradient-to-r from-violet-500 to-blue-600 text-white font-semibold py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-violet-500/20"
+                                >
+                                    <Download className="w-5 h-5" />
+                                    Download Video (MP4)
+                                </a>
+                                <div className="p-4 bg-neutral-900/50 border border-neutral-800 rounded-xl text-sm text-neutral-400 flex items-start gap-3">
+                                    <Info className="w-4 h-4 flex-shrink-0 text-violet-400 mt-0.5" />
+                                    <p>This link is valid for 30 minutes. The file will be automatically deleted from the server after download.</p>
+                                </div>
+                                <button
+                                    onClick={() => setRenderMode('choose')}
+                                    className="w-full py-3 rounded-xl border border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors text-sm"
+                                >
+                                    ← Render Another Version
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── LOCAL RENDER UI (unchanged logic) ───────────────────── */}
+                {renderMode === 'local' && (
+                    <div className="space-y-8">
+                        {status === 'error' && (
+                            <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-4 flex items-center gap-4 text-red-200 mb-6">
+                                <AlertCircle className="w-6 h-6 flex-shrink-0" />
+                                <p>{errorMsg}</p>
+                            </div>
+                        )}
+
+                        {platformInfo?.warnings && platformInfo.warnings.length > 0 && status !== 'error' && (
+                            <div className="bg-amber-500/10 border border-amber-500/50 rounded-xl p-4 text-amber-200 mb-6">
+                                <p className="text-sm">{platformInfo.warnings.join(' ')}</p>
+                            </div>
+                        )}
+
+                        <div className="space-y-6">
+                            {/* Audio Step */}
+                            <div className={`space-y-2 transition-opacity ${status === 'audio' ? 'opacity-100' : 'opacity-50'}`}>
+                                <div className="flex justify-between items-center text-sm font-medium">
+                                    <span className="flex items-center gap-2">
+                                        {status === 'audio' && <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />}
+                                        {(status !== 'idle' && status !== 'audio') && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                        🎙️ Generating Audio
+                                    </span>
+                                    <span>{status === 'audio' ? `${progress}%` : (status === 'idle' ? '0%' : '100%')}</span>
+                                </div>
+                                <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-cyan-500 transition-all duration-300 ease-out"
+                                        style={{ width: `${status === 'audio' ? progress : (status !== 'idle' ? 100 : 0)}%` }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Rendering Step */}
+                            <div className={`space-y-2 transition-opacity ${status === 'rendering' || status === 'loading' ? 'opacity-100' : 'opacity-50'}`}>
+                                <div className="flex justify-between items-center text-sm font-medium">
+                                    <span className="flex items-center gap-2">
+                                        {status === 'rendering' && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
+                                        {status === 'complete' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                        {statusMessage || '🎬 Rendering Video'}
+                                    </span>
+                                    <span>
+                                        {status === 'rendering' ? `${progress}%` :
+                                            (status === 'complete' ? '100%' : '0%')}
+                                    </span>
+                                </div>
+                                <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                                        style={{
+                                            width: `${status === 'rendering' ? progress :
+                                                (status === 'complete' ? 100 : (status === 'loading' ? 5 : 0))}%`
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Completion State */}
+                        {status === 'complete' && videoUrl && (
+                            <div className="mt-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                <video
+                                    src={videoUrl}
+                                    controls
+                                    className="w-full aspect-video rounded-xl shadow-lg border border-neutral-800 mb-6"
+                                />
+                                <div className="flex gap-4">
+                                    <a
+                                        href={videoUrl}
+                                        download={`${script.slides[0]?.title || 'video'}.mp4`}
+                                        className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-cyan-500/20"
+                                    >
+                                        <Download className="w-5 h-5" />
+                                        Download Video
+                                    </a>
+                                </div>
+                                <div className="mt-4 p-4 bg-neutral-900/50 rounded-lg border border-neutral-800 text-sm text-neutral-400 flex items-start gap-3">
+                                    <Info className="w-5 h-5 flex-shrink-0 text-cyan-500" />
+                                    <p>Video rendered locally using WebCodecs.</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

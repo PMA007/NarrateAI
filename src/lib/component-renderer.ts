@@ -7,6 +7,7 @@ interface RenderOptions {
     width?: number;
     height?: number;
     fps?: number;
+    fast?: boolean;
 }
 
 interface SlideTimeline {
@@ -31,6 +32,7 @@ export class ComponentRenderer {
     private height: number;
     private fps: number;
     private frameInterval: number;
+    private fast: boolean;
 
     // Callbacks to drive the React UI
     private onUpdateState: (state: Partial<RenderState>) => void;
@@ -45,6 +47,7 @@ export class ComponentRenderer {
         this.height = options.height || 720;
         this.fps = options.fps || 24;
         this.frameInterval = 1_000_000 / this.fps;
+        this.fast = options.fast || false;
         this.onUpdateState = onUpdateState;
         this.getContainer = getContainer;
     }
@@ -164,8 +167,13 @@ export class ComponentRenderer {
                 });
 
                 // Wait for DOM to settle and fonts to load
-                const waitTime = frameIndex === 0 ? 300 : 50; // Longer wait for first frame
-                await new Promise(r => setTimeout(r, waitTime));
+                if (frameIndex === 0) {
+                    await new Promise(r => setTimeout(r, 300));
+                } else if (!this.fast) {
+                    await new Promise(r => setTimeout(r, 50));
+                } else {
+                    await new Promise(r => setTimeout(r, 0));
+                }
 
                 // Ensure fonts are loaded before capturing
                 await document.fonts.ready;

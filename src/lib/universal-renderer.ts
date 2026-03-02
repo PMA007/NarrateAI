@@ -14,6 +14,8 @@ interface RenderOptions {
     width?: number;
     height?: number;
     fps?: number;
+    /** When true, skip the real-time throttle for server-side rendering (much faster). */
+    fast?: boolean;
 }
 
 interface SlideTimeline {
@@ -80,11 +82,13 @@ export class UniversalRenderer {
     private fps: number;
     private frameInterval: number;
     private platform: PlatformInfo;
+    private fast: boolean;
 
     constructor(options: RenderOptions = {}) {
         this.width = options.width || 1280;
         this.height = options.height || 720;
         this.fps = options.fps || 24;
+        this.fast = options.fast || false;
         this.frameInterval = 1_000_000 / this.fps;
         this.platform = detectPlatform();
     }
@@ -229,16 +233,19 @@ export class UniversalRenderer {
                 onProgress(p);
             }
 
-            // Throttling: Ensure we don't render faster than real-time to save memory
-            // User Request: "rendering time is exactly equal to the video duration"
-            const processingTime = performance.now() - frameStart;
-            const targetFrameTime = 1000 / this.fps; // ~41.6ms for 24fps
-            const delay = targetFrameTime - processingTime;
-
-            if (delay > 0) {
-                await new Promise(r => setTimeout(r, delay));
-            } else {
-                // Even if slow, allow a tiny breathe for UI/GC
+            // Throttling: skip in fast mode (server rendering),
+            // otherwise rate-limit to real-time to save memory.
+            if (!this.fast) {
+                const processingTime = performance.now() - frameStart;
+                const targetFrameTime = 1000 / this.fps;
+                const delay = targetFrameTime - processingTime;
+                if (delay > 0) {
+                    await new Promise(r => setTimeout(r, delay));
+                } else {
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            } else if (frameIndex % 30 === 0) {
+                // In fast mode: only yield event loop every 30 frames
                 await new Promise(r => setTimeout(r, 0));
             }
         }
