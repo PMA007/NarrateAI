@@ -5,18 +5,21 @@ import { wizardGraph } from '@/lib/agents/wizard-graph';
 export const dynamic = 'force-dynamic';
 
 const KNOWN_NODES = new Set([
-    'researcher', 'flow_architect', 'content_generator',
-    'narration_writer', 'reviewer', 'improver', 'merger'
+    'research_decision', 'question_agent', 'research_agent',
+    'flow_agent', 'content_agent', 'slide_designer',
+    'slide_agent', 'narration_agent', 'assembler'
 ]);
 
 const NODE_START_LABELS: Record<string, string> = {
-    researcher: '🔍 Research Agent: Gathering facts from the web...',
-    flow_architect: '🌊 Flow Architect: Analyzing narrative structure...',
-    content_generator: '🎨 Content Agent: Generating slides...',
-    narration_writer: '🎙️ Narration Agent: Writing scripts...',
-    reviewer: '🧐 Reviewer Agent: Critiquing script...',
-    improver: '🛠️ Improver Agent: Polishing content...',
-    merger: '🔗 Merger Agent: Finalizing video...',
+    research_decision: '🔍 Research Decision: Evaluating if web research is needed...',
+    question_agent: '❓ Question Agent: Generating targeted search queries...',
+    research_agent: '🌐 Research Agent: Searching the web for facts...',
+    flow_agent: '🌊 Flow Agent: Planning content distribution across slides...',
+    content_agent: '📝 Content Agent: Generating rich slide content...',
+    slide_designer: '🎨 Slide Designer: Choosing optimal visual layouts...',
+    slide_agent: '🔧 Slide Agent: Structuring final slide JSON...',
+    narration_agent: '🎙️ Narration Agent: Writing voiceover scripts...',
+    assembler: '📦 Assembler: Packaging final production script...',
 };
 
 export async function POST(req: NextRequest) {
@@ -44,10 +47,9 @@ export async function POST(req: NextRequest) {
                     topic,
                     genre,
                     outline,
+                    slideCount: outline?.length || 8,
                     template: template || 'neon',
                     language: language || 'English',
-                    scriptContent: [],
-                    narration: [],
                 }, { version: "v2" });
 
                 // Track which nodes have already emitted their completion
@@ -64,39 +66,51 @@ export async function POST(req: NextRequest) {
 
                     let summary: any;
                     switch (nodeName) {
-                        case 'researcher':
+                        case 'research_decision':
+                            summary = {
+                                type: 'research_decision',
+                                needsResearch: !!out.needsResearch,
+                            };
+                            await send({ type: 'log', agentId: nodeName, message: out.needsResearch ? '✅ Research needed — proceeding to search.' : '✅ Research skipped — using existing knowledge.' });
+                            break;
+                        case 'question_agent':
+                            summary = {
+                                type: 'queries',
+                                queries: out.searchQueries ?? [],
+                            };
+                            await send({ type: 'log', agentId: nodeName, message: `✅ Generated ${(out.searchQueries ?? []).length} search queries.` });
+                            break;
+                        case 'research_agent':
                             summary = {
                                 type: 'research',
-                                notes: typeof out.research_notes === 'string'
-                                    ? out.research_notes.substring(0, 3000)
+                                notes: typeof out.researchData === 'string'
+                                    ? out.researchData.substring(0, 3000)
                                     : 'No research notes for this topic.'
                             };
                             await send({ type: 'log', agentId: nodeName, message: '✅ Research completed and synthesized.' });
                             break;
-                        case 'flow_architect':
-                            summary = { type: 'outline', slides: out.outline ?? [] };
-                            await send({ type: 'log', agentId: nodeName, message: `✅ Flow Architect designed ${(out.outline ?? []).length || 'the'} narrative arc slides.` });
+                        case 'flow_agent':
+                            summary = { type: 'flow', slides: out.flowPlan ?? [] };
+                            await send({ type: 'log', agentId: nodeName, message: `✅ Flow Agent planned ${(out.flowPlan ?? []).length} slides.` });
                             break;
-                        case 'content_generator':
-                            summary = { type: 'content', slides: out.scriptContent ?? [] };
-                            await send({ type: 'log', agentId: nodeName, message: '✅ Primary slide content formulated.' });
+                        case 'content_agent':
+                            summary = { type: 'content', slides: out.slideContents ?? [] };
+                            await send({ type: 'log', agentId: nodeName, message: '✅ Rich content generated for all slides.' });
                             break;
-                        case 'narration_writer':
-                            summary = { type: 'narration', narrations: out.narration ?? [] };
-                            await send({ type: 'log', agentId: nodeName, message: '✅ Voice-over narration scripts authored.' });
+                        case 'slide_designer':
+                            summary = { type: 'designs', designs: out.slideDesigns ?? [] };
+                            await send({ type: 'log', agentId: nodeName, message: `✅ Visual layouts chosen for ${(out.slideDesigns ?? []).length} slides.` });
                             break;
-                        case 'reviewer': {
-                            summary = { type: 'review', critique: out.critique ?? {} };
-                            const needsFix = summary.critique?.needs_improvement;
-                            await send({ type: 'log', agentId: nodeName, message: needsFix ? '⚠️ Reviewer found issues; sending to Improver.' : '✅ Reviewer approved the script; no fixes needed.' });
+                        case 'slide_agent':
+                            summary = { type: 'slides', slides: out.slides ?? [] };
+                            await send({ type: 'log', agentId: nodeName, message: `✅ Final slide JSON structured (${(out.slides ?? []).length} slides).` });
                             break;
-                        }
-                        case 'improver':
-                            summary = { type: 'improvement', applied: !!out.refinedScript };
-                            await send({ type: 'log', agentId: nodeName, message: summary.applied ? '✅ Improver finalized structural refinements.' : '✅ Improver bypassed (script already approved).' });
+                        case 'narration_agent':
+                            summary = { type: 'narration', slideCount: (out.slides ?? []).length };
+                            await send({ type: 'log', agentId: nodeName, message: '✅ Per-element voiceover narration authored.' });
                             break;
-                        case 'merger':
-                            summary = { type: 'merger', slideCount: out.refinedScript?.slides?.length ?? '?' };
+                        case 'assembler':
+                            summary = { type: 'assembler', slideCount: out.finalScript?.slides?.length ?? '?' };
                             await send({ type: 'log', agentId: nodeName, message: `✅ Scripts assembled into final production format (${summary.slideCount} slides).` });
                             break;
                     }
@@ -138,8 +152,8 @@ export async function POST(req: NextRequest) {
 
                     // ── Graph end — emit final result ───────────────────────────
                     } else if (eventType === 'on_chain_end' && name === 'LangGraph') {
-                        if (event.data?.output?.refinedScript) {
-                            await send({ type: 'result', data: event.data.output.refinedScript });
+                        if (event.data?.output?.finalScript) {
+                            await send({ type: 'result', data: event.data.output.finalScript });
                         }
 
                     // ── LLM token streaming ─────────────────────────────────────

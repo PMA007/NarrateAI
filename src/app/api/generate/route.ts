@@ -6,7 +6,7 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { topic, language, slideCount, suggestions } = body;
+        const { topic, language, slideCount, genre, template } = body;
 
         if (!topic) {
             return NextResponse.json({ error: 'Topic is required' }, { status: 400 });
@@ -17,11 +17,10 @@ export async function POST(req: NextRequest) {
         // Invoke the LangGraph Agent
         const finalState = await appGraph.invoke({
             topic,
-            language: language || 'English',
+            genre: genre || 'general',
             slideCount: slideCount || 8,
-            userSuggestions: suggestions || '', // Pass user suggestions
-            classification: 'simple', // Initial value
-            genre: 'general' // Initial value
+            template: template || 'neon',
+            language: language || 'English',
         });
 
         if (!finalState.finalScript) {

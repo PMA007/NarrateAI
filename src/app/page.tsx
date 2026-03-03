@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, ArrowRight, Check, Sparkles, AlertCircle, Wand2, Search, LibraryBig, Palette, Mic, CheckCircle, Wrench, GitMerge, X, ChevronRight } from 'lucide-react';
+import { Loader2, ArrowRight, Check, Sparkles, AlertCircle, Wand2, Search, HelpCircle, Globe, LibraryBig, FileText, Palette, Blocks, Mic, Package, X, ChevronRight } from 'lucide-react';
 import { NarrateLogo } from '@/components/ui/narrate-logo';
 import { AgentFlowGraph } from '@/components/ui/agent-graph';
 import { TerminalLog } from '@/components/ui/terminal-log';
@@ -13,38 +13,42 @@ import { SARVAM_VOICES, SARVAM_LANGUAGES, AZURE_VOICES, GEMINI_VOICES } from '@/
 // Define Wizard Steps
 type WizardStep = 'topic' | 'specs' | 'outline' | 'style' | 'generating';
 
-// All 7 agents in the pipeline
+// All 9 agents in the pipeline
 const ALL_AGENTS = [
-    { id: 'researcher', name: 'Research Scholar', desc: 'Gathering facts & context', icon: Search, color: 'blue' },
-    { id: 'flow_architect', name: 'Flow Architect', desc: 'Structuring narrative arc', icon: LibraryBig, color: 'indigo' },
-    { id: 'content_generator', name: 'Content Designer', desc: 'Crafting visual slides', icon: Palette, color: 'purple' },
-    { id: 'narration_writer', name: 'Script Writer', desc: 'Composing narration', icon: Mic, color: 'pink' },
-    { id: 'reviewer', name: 'Editor-in-Chief', desc: 'Quality assurance', icon: CheckCircle, color: 'emerald' },
-    { id: 'improver', name: 'Content Improver', desc: 'Refining & polishing', icon: Wrench, color: 'orange' },
-    { id: 'merger', name: 'Final Assembler', desc: 'Packaging the video script', icon: GitMerge, color: 'cyan' },
+    { id: 'research_decision', name: 'Research Decision', desc: 'Evaluating research needs', icon: Search, color: 'blue' },
+    { id: 'question_agent', name: 'Question Agent', desc: 'Generating search queries', icon: HelpCircle, color: 'sky' },
+    { id: 'research_agent', name: 'Research Agent', desc: 'Searching the web', icon: Globe, color: 'teal' },
+    { id: 'flow_agent', name: 'Flow Agent', desc: 'Planning slide distribution', icon: LibraryBig, color: 'indigo' },
+    { id: 'content_agent', name: 'Content Agent', desc: 'Generating slide content', icon: FileText, color: 'purple' },
+    { id: 'slide_designer', name: 'Slide Designer', desc: 'Choosing visual layouts', icon: Palette, color: 'pink' },
+    { id: 'slide_agent', name: 'Slide Agent', desc: 'Structuring final JSON', icon: Blocks, color: 'orange' },
+    { id: 'narration_agent', name: 'Narration Agent', desc: 'Writing voiceover scripts', icon: Mic, color: 'emerald' },
+    { id: 'assembler', name: 'Assembler', desc: 'Packaging final script', icon: Package, color: 'cyan' },
 ];
 
 // One-liner summaries per agent output type (shown in the post-completion agent grid)
 function getAgentOneliner(output: any): string {
     if (!output) return 'No output captured.';
     switch (output.type) {
+        case 'research_decision':
+            return output.needsResearch ? 'Web research required — proceeding to search.' : 'Research skipped — using existing knowledge.';
+        case 'queries':
+            return `Generated ${output.queries?.length ?? 0} targeted search queries.`;
         case 'research':
-            return (output.notes && output.notes !== 'Research skipped (not needed.)' && output.notes !== 'Research skipped (error).')
+            return (output.notes && output.notes !== 'No research results found.')
                 ? 'Web research gathered & synthesized.'
-                : 'Covered from built-in knowledge.';
-        case 'outline':
-            return `Refined ${output.slides?.length ?? 0}-slide narrative arc.`;
+                : 'No results found — proceeding with built-in knowledge.';
+        case 'flow':
+            return `Planned ${output.slides?.length ?? 0}-slide content distribution.`;
         case 'content':
-            return `Designed ${output.slides?.length ?? 0} slides with visual layouts.`;
+            return `Generated rich content for ${output.slides?.length ?? 0} slides.`;
+        case 'designs':
+            return `Selected visual layouts for ${output.designs?.length ?? 0} slides.`;
+        case 'slides':
+            return `Structured ${output.slides?.length ?? 0} slides into final JSON.`;
         case 'narration':
-            return `Authored ${output.narrations?.length ?? 0} voice-over scripts.`;
-        case 'review':
-            return output.critique?.needs_improvement
-                ? 'Found issues – forwarded to Improver.'
-                : 'Script approved — quality verified ✓';
-        case 'improvement':
-            return output.applied ? 'Applied content refinements.' : 'Script was already high-quality.';
-        case 'merger':
+            return `Authored voiceover scripts for ${output.slideCount ?? 0} slides.`;
+        case 'assembler':
             return `Assembled ${output.slideCount} slides into final package.`;
         default:
             return 'Completed.';
@@ -53,8 +57,8 @@ function getAgentOneliner(output: any): string {
 
 // Static icon colors for the inspector modal (Tailwind JIT can't resolve dynamic class strings)
 const MODAL_ICON_COLORS: Record<string, string> = {
-    blue: '#60a5fa', indigo: '#818cf8', purple: '#c084fc',
-    pink: '#f472b6', emerald: '#34d399', orange: '#fb923c', cyan: '#22d3ee',
+    blue: '#60a5fa', sky: '#38bdf8', teal: '#2dd4bf', indigo: '#818cf8',
+    purple: '#c084fc', pink: '#f472b6', orange: '#fb923c', emerald: '#34d399', cyan: '#22d3ee',
 };
 
 function AgentOutputModal({ agentId, output, onClose }: { agentId: string; output: any; onClose: () => void }) {
@@ -65,22 +69,43 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
         if (!output) return <p className="text-slate-400 text-sm">No output recorded.</p>;
 
         switch (output.type) {
+            case 'research_decision':
+                return (
+                    <div className={`flex items-center space-x-3 p-4 rounded-lg border ${output.needsResearch ? 'bg-blue-950/30 border-blue-800/50' : 'bg-slate-900 border-slate-800'}`}>
+                        <Search className="w-5 h-5 text-blue-400 shrink-0" />
+                        <p className="text-sm text-slate-300">{output.needsResearch ? 'Web research is required for this topic. Proceeding to generate search queries.' : 'This topic can be covered from built-in knowledge. Skipping research phase.'}</p>
+                    </div>
+                );
+            case 'queries':
+                return (
+                    <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Generated Search Queries ({output.queries?.length || 0})</p>
+                        <div className="space-y-2">
+                            {(output.queries || []).map((q: string, i: number) => (
+                                <div key={i} className="flex items-center space-x-3 bg-slate-900 p-3 rounded-lg border border-slate-800">
+                                    <span className="text-xs text-slate-500 font-mono w-5 shrink-0">{i + 1}</span>
+                                    <span className="text-sm text-sky-200">{q}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
             case 'research':
                 return (
                     <div>
                         <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Research Notes</p>
-                        <pre className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-mono bg-slate-950 p-4 rounded-lg">{output.notes || 'No research notes available (topic did not require web research).'}</pre>
+                        <pre className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-mono bg-slate-950 p-4 rounded-lg max-h-64 overflow-y-auto">{output.notes || 'No research notes available.'}</pre>
                     </div>
                 );
-            case 'outline':
+            case 'flow':
                 return (
                     <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Refined Slide Outline ({output.slides?.length || 0} slides)</p>
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Slide Flow Plan ({output.slides?.length || 0} slides)</p>
                         <div className="space-y-2">
                             {(output.slides || []).map((s: any, i: number) => (
                                 <div key={i} className="flex items-center space-x-3 bg-slate-900 p-3 rounded-lg border border-slate-800">
                                     <span className="text-xs text-slate-500 font-mono w-5 shrink-0">{i + 1}</span>
-                                    <span className="text-sm text-slate-200">{typeof s === 'string' ? s : s.title || JSON.stringify(s)}</span>
+                                    <span className="text-sm text-slate-200">{typeof s === 'string' ? s : s.title || s.focus || JSON.stringify(s)}</span>
                                 </div>
                             ))}
                         </div>
@@ -90,6 +115,37 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
                 return (
                     <div>
                         <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Slide Content ({output.slides?.length || 0} slides)</p>
+                        <div className="space-y-3">
+                            {(output.slides || []).map((s: any, i: number) => (
+                                <div key={i} className="bg-slate-900 p-4 rounded-lg border border-slate-800">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                        <span className="text-xs text-slate-500 font-mono">{i + 1}</span>
+                                        <span className="text-sm font-bold text-slate-100">{s.title}</span>
+                                    </div>
+                                    {s.key_points && <ul className="list-disc list-inside text-xs text-slate-400 space-y-0.5">{(Array.isArray(s.key_points) ? s.key_points : []).slice(0, 4).map((b: string, j: number) => <li key={j}>{b}</li>)}</ul>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            case 'designs':
+                return (
+                    <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Visual Layout Decisions ({output.designs?.length || 0} slides)</p>
+                        <div className="space-y-2">
+                            {(output.designs || []).map((d: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between bg-slate-900 p-3 rounded-lg border border-slate-800">
+                                    <span className="text-sm text-slate-200">Slide {d.slide_number || i + 1}</span>
+                                    <span className="text-xs text-pink-300 font-mono border border-pink-800/50 px-2 py-0.5 rounded">{d.layout}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            case 'slides':
+                return (
+                    <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Final Slide JSON ({output.slides?.length || 0} slides)</p>
                         <div className="space-y-3">
                             {(output.slides || []).map((s: any, i: number) => (
                                 <div key={i} className="bg-slate-900 p-4 rounded-lg border border-slate-800">
@@ -106,58 +162,12 @@ function AgentOutputModal({ agentId, output, onClose }: { agentId: string; outpu
                 );
             case 'narration':
                 return (
-                    <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Narration Scripts ({output.narrations?.length || 0} slides)</p>
-                        <div className="space-y-3">
-                            {(output.narrations || []).map((n: string, i: number) => (
-                                <div key={i} className="bg-slate-900 p-4 rounded-lg border border-slate-800">
-                                    <span className="text-xs text-slate-500 font-mono block mb-1">Slide {i + 1}</span>
-                                    <p className="text-sm text-slate-300 leading-relaxed">{n}</p>
-                                </div>
-                            ))}
-                        </div>
+                    <div className="flex items-center space-x-3 p-4 rounded-lg border bg-emerald-950/30 border-emerald-800/50">
+                        <Mic className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <p className="text-sm text-slate-300">Per-element voiceover narration authored for <span className="text-emerald-300 font-bold">{output.slideCount || '?'}</span> slides.</p>
                     </div>
                 );
-            case 'review':
-                const critique = output.critique || {};
-                return (
-                    <div className="space-y-4">
-                        <div className={`flex items-center space-x-2 p-3 rounded-lg border ${critique.needs_improvement ? 'bg-orange-950/30 border-orange-800/50 text-orange-300' : 'bg-green-950/30 border-green-800/50 text-green-300'}`}>
-                            {critique.needs_improvement ? <AlertCircle className="w-4 h-4 shrink-0" /> : <Check className="w-4 h-4 shrink-0" />}
-                            <span className="text-sm font-medium">{critique.needs_improvement ? 'Improvements Needed' : 'Script Approved — No Changes Required'}</span>
-                        </div>
-                        {critique.overall_feedback && <p className="text-sm text-slate-300 bg-slate-900 p-3 rounded-lg border border-slate-800">{typeof critique.overall_feedback === 'string' ? critique.overall_feedback : JSON.stringify(critique.overall_feedback)}</p>}
-                        {critique.suggestions?.length > 0 && (
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Suggestions</p>
-                                <ul className="space-y-2">
-                                    {critique.suggestions.map((s: any, i: number) => {
-                                        // Handle both plain strings and objects like {slide_index, suggestion}
-                                        const text = typeof s === 'string' ? s : s?.suggestion || s?.text || JSON.stringify(s);
-                                        const slideRef = typeof s === 'object' && s?.slide_index != null ? `Slide ${s.slide_index}` : null;
-                                        return (
-                                            <li key={i} className="text-sm text-slate-400 flex items-start space-x-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                                                <ChevronRight className="w-3.5 h-3.5 mt-0.5 text-orange-400 shrink-0" />
-                                                <span>
-                                                    {slideRef && <span className="text-orange-400/70 font-mono text-xs mr-1.5">[{slideRef}]</span>}
-                                                    {text}
-                                                </span>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
-                );
-            case 'improvement':
-                return (
-                    <div className={`flex items-center space-x-3 p-4 rounded-lg border ${output.applied ? 'bg-emerald-950/30 border-emerald-800/50' : 'bg-slate-900 border-slate-800'}`}>
-                        {output.applied ? <Check className="w-5 h-5 text-emerald-400 shrink-0" /> : <Sparkles className="w-5 h-5 text-slate-500 shrink-0" />}
-                        <p className="text-sm text-slate-300">{output.applied ? 'Script was refined and improved based on reviewer feedback.' : 'No changes needed — original script was already high quality.'}</p>
-                    </div>
-                );
-            case 'merger':
+            case 'assembler':
                 return (
                     <div className="flex items-center space-x-3 p-4 rounded-lg bg-cyan-950/30 border border-cyan-800/50">
                         <Check className="w-5 h-5 text-cyan-400 shrink-0" />
@@ -401,7 +411,7 @@ export default function Home() {
                                 const finalScript = {
                                     topic,
                                     template: template as any,
-                                    slides: Array.isArray(data) ? data : data.slides || (data.refinedScript && data.refinedScript.slides)
+                                    slides: Array.isArray(data) ? data : data.slides || (data.finalScript && data.finalScript.slides)
                                 };
                                 useStore.getState().setScript(finalScript);
                                 // Mark last agent as done

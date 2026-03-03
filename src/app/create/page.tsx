@@ -12,13 +12,15 @@ type WizardStep = 'topic' | 'specs' | 'outline' | 'style' | 'generating';
 
 // --- Agent Output Card ---
 const AGENT_META: Record<string, { label: string; emoji: string; color: string }> = {
-    researcher: { label: 'Research Agent', emoji: '🔍', color: 'border-blue-500/40 bg-blue-950/20' },
-    flow_architect: { label: 'Flow Architect', emoji: '🌊', color: 'border-purple-500/40 bg-purple-950/20' },
-    content_generator: { label: 'Content Agent', emoji: '🎨', color: 'border-pink-500/40 bg-pink-950/20' },
-    narration_writer: { label: 'Narration Agent', emoji: '🎙️', color: 'border-yellow-500/40 bg-yellow-950/20' },
-    reviewer: { label: 'Reviewer Agent', emoji: '🧐', color: 'border-orange-500/40 bg-orange-950/20' },
-    improver: { label: 'Improver Agent', emoji: '🛠️', color: 'border-red-500/40 bg-red-950/20' },
-    merger: { label: 'Merger Agent', emoji: '🔗', color: 'border-green-500/40 bg-green-950/20' },
+    research_decision: { label: 'Research Decision', emoji: '🔍', color: 'border-blue-500/40 bg-blue-950/20' },
+    question_agent: { label: 'Question Agent', emoji: '❓', color: 'border-sky-500/40 bg-sky-950/20' },
+    research_agent: { label: 'Research Agent', emoji: '🌐', color: 'border-teal-500/40 bg-teal-950/20' },
+    flow_agent: { label: 'Flow Agent', emoji: '🌊', color: 'border-indigo-500/40 bg-indigo-950/20' },
+    content_agent: { label: 'Content Agent', emoji: '📝', color: 'border-purple-500/40 bg-purple-950/20' },
+    slide_designer: { label: 'Slide Designer', emoji: '🎨', color: 'border-pink-500/40 bg-pink-950/20' },
+    slide_agent: { label: 'Slide Agent', emoji: '🔧', color: 'border-orange-500/40 bg-orange-950/20' },
+    narration_agent: { label: 'Narration Agent', emoji: '🎤', color: 'border-emerald-500/40 bg-emerald-950/20' },
+    assembler: { label: 'Assembler', emoji: '📦', color: 'border-cyan-500/40 bg-cyan-950/20' },
 };
 
 function AgentOutputCard({ agentId, output }: { agentId: string; output: any }) {
@@ -27,17 +29,34 @@ function AgentOutputCard({ agentId, output }: { agentId: string; output: any }) 
 
     const renderContent = () => {
         switch (output?.type) {
+            case 'research_decision':
+                return (
+                    <p className={`text-sm ${output.needsResearch ? 'text-blue-300' : 'text-slate-400'}`}>
+                        {output.needsResearch ? '🔍 Web research required — queuing search queries.' : '✅ Research skipped — topic covered by built-in knowledge.'}
+                    </p>
+                );
+            case 'queries':
+                return (
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {(output.queries || []).map((q: string, i: number) => (
+                            <div key={i} className="text-xs bg-black/30 rounded p-2">
+                                <span className="text-sky-400 font-bold">{i + 1}. </span>
+                                <span className="text-neutral-200">{q}</span>
+                            </div>
+                        ))}
+                    </div>
+                );
             case 'research':
                 return (
-                    <pre className="text-xs text-blue-200 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                    <pre className="text-xs text-teal-200 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                         {output.notes || 'No research notes.'}
                     </pre>
                 );
-            case 'outline':
+            case 'flow':
                 return (
                     <ol className="list-decimal list-inside space-y-1">
                         {(output.slides || []).map((s: any, i: number) => (
-                            <li key={i} className="text-sm text-purple-200">{s.title || s}</li>
+                            <li key={i} className="text-sm text-indigo-200">{typeof s === 'string' ? s : s.title || s.focus || JSON.stringify(s)}</li>
                         ))}
                     </ol>
                 );
@@ -46,48 +65,47 @@ function AgentOutputCard({ agentId, output }: { agentId: string; output: any }) 
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                         {(output.slides || []).map((s: any, i: number) => (
                             <div key={i} className="text-xs bg-black/30 rounded p-2 space-y-1">
-                                <p className="font-bold text-pink-300">Slide {i + 1}: {s.title}</p>
-                                {s.layout && <p className="text-neutral-400">Layout: <span className="text-white">{s.layout}</span></p>}
-                                {s.points?.length > 0 && (
+                                <p className="font-bold text-purple-300">Slide {i + 1}: {s.title}</p>
+                                {s.key_points?.length > 0 && (
                                     <ul className="list-disc list-inside text-neutral-300">
-                                        {s.points.map((p: string, j: number) => <li key={j}>{p}</li>)}
+                                        {(s.key_points || []).slice(0, 3).map((p: string, j: number) => <li key={j}>{p}</li>)}
                                     </ul>
                                 )}
                             </div>
                         ))}
                     </div>
                 );
-            case 'narration':
+            case 'designs':
                 return (
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {(output.narrations || []).map((n: string, i: number) => (
-                            <div key={i} className="text-xs bg-black/30 rounded p-2">
-                                <span className="text-yellow-400 font-bold">Slide {i + 1}: </span>
-                                <span className="text-neutral-200">{n}</span>
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {(output.designs || []).map((d: any, i: number) => (
+                            <div key={i} className="text-xs bg-black/30 rounded p-2 flex justify-between">
+                                <span className="text-pink-300">Slide {d.slide_number || i + 1}</span>
+                                <span className="text-white font-mono">{d.layout}</span>
                             </div>
                         ))}
                     </div>
                 );
-            case 'review':
+            case 'slides':
                 return (
-                    <div className="text-xs space-y-2">
-                        <p className={output.critique?.needs_improvement ? 'text-orange-300' : 'text-green-400'}>
-                            {output.critique?.needs_improvement ? '⚠️ Needs improvement' : '✅ Script looks good'}
-                        </p>
-                        {output.critique?.suggestions?.map((s: string, i: number) => (
-                            <p key={i} className="text-neutral-300 border-l-2 border-orange-500/40 pl-2">• {s}</p>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {(output.slides || []).map((s: any, i: number) => (
+                            <div key={i} className="text-xs bg-black/30 rounded p-2 space-y-1">
+                                <p className="font-bold text-orange-300">Slide {i + 1}: {s.title}</p>
+                                <p className="text-neutral-400">Layout: <span className="text-white">{s.layout}</span></p>
+                            </div>
                         ))}
                     </div>
                 );
-            case 'improvement':
+            case 'narration':
                 return (
-                    <p className={`text-sm ${output.applied ? 'text-green-400' : 'text-neutral-400'}`}>
-                        {output.applied ? '✅ Improvements applied to script.' : 'ℹ️ No changes needed — skipped.'}
+                    <p className="text-sm text-emerald-300">
+                        ✅ Per-element voiceover narration written for {output.slideCount || '?'} slides.
                     </p>
                 );
-            case 'merger':
+            case 'assembler':
                 return (
-                    <p className="text-sm text-green-300">
+                    <p className="text-sm text-cyan-300">
                         ✅ Finalized video package — <strong>{output.slideCount}</strong> slides ready.
                     </p>
                 );
@@ -120,13 +138,15 @@ function AgentOutputCard({ agentId, output }: { agentId: string; output: any }) 
 
 // --- Agent Pipeline Graph ---
 const AGENT_PIPELINE = [
-    { id: 'researcher', label: 'Research', emoji: '🔍' },
-    { id: 'flow_architect', label: 'Flow', emoji: '🌊' },
-    { id: 'content_generator', label: 'Content', emoji: '🎨' },
-    { id: 'narration_writer', label: 'Narration', emoji: '🎙️' },
-    { id: 'reviewer', label: 'Reviewer', emoji: '🧐' },
-    { id: 'improver', label: 'Improver', emoji: '🛠️' },
-    { id: 'merger', label: 'Merge', emoji: '🔗' },
+    { id: 'research_decision', label: 'Decision', emoji: '🔍' },
+    { id: 'question_agent', label: 'Questions', emoji: '❓' },
+    { id: 'research_agent', label: 'Research', emoji: '🌐' },
+    { id: 'flow_agent', label: 'Flow', emoji: '🌊' },
+    { id: 'content_agent', label: 'Content', emoji: '📝' },
+    { id: 'slide_designer', label: 'Designer', emoji: '🎨' },
+    { id: 'slide_agent', label: 'Slides', emoji: '🔧' },
+    { id: 'narration_agent', label: 'Narration', emoji: '🎤' },
+    { id: 'assembler', label: 'Assemble', emoji: '📦' },
 ];
 
 function AgentGraph({ activeAgent, completedAgents }: { activeAgent: string; completedAgents: string[] }) {
@@ -333,10 +353,10 @@ export default function CreateWizard() {
                             } else if (event.type === 'result') {
                                 const data = event.data;
                                 // Safely extract slides - data can be the script directly
-                                // or it could be wrapped in refinedScript, or be the array itself
+                                // or it could be wrapped in finalScript, or be the array itself
                                 const rawSlides = Array.isArray(data)
                                     ? data
-                                    : (data?.slides ?? data?.refinedScript?.slides ?? []);
+                                    : (data?.slides ?? data?.finalScript?.slides ?? []);
                                 const finalScript = {
                                     topic,
                                     template: template as any,

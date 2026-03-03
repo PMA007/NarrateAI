@@ -1,360 +1,659 @@
 /**
  * Agentic System Prompts for Video Generation
- * v2.0 - Genre Aware & User Directed
+ * v3.0 — New Pipeline Architecture
+ *
+ * Agent Pipeline:
+ *   1. Research Decision Agent — decides if web research is needed
+ *   2. Question Agent — generates targeted search queries
+ *   3. Research Agent — executes Tavily searches (no LLM prompt, uses tool)
+ *   4. Flow Agent — plans content distribution across slides
+ *   5. Content Agent — generates raw content per slide (merges research + knowledge)
+ *   6. Slide Designer Agent — picks best visual layout per slide (template-aware)
+ *   7. Slide Agent — generates final JSON with correct data contracts
+ *   8. Narration Agent — generates per-element narration for each slide
  */
 
-export const ROUTER_PROMPT = `
-You are an expert intent classifier.
-Analyze the user's input topic and categorize it into the most appropriate genre:
+// ═══════════════════════════════════════════════════════════════
+// THEME LAYOUT SUPPORT MAP
+// ═══════════════════════════════════════════════════════════════
 
-1. "history": Events, biographies, wars, historical comparisons.
-2. "mathematics": Math problems, theorems, proofs, concepts.
-3. "science": Physics, biology, chemistry, space, health, empirical topics.
-4. "tech": Programming, software, hardware, engineering, how-to guides.
-5. "story": Fictional stories, creative writing, myths, legends.
-6. "coding": Code explanations, algorithms, data structures, programming concepts.
-7. "general": Anything else (motivational, simple explanations, abstract concepts).
+const THEME_LAYOUT_SUPPORT: Record<string, { supported: string[]; partial: string[]; avoid: string[] }> = {
+  nanobanna: {
+    supported: ['title', 'text_features', 'columns_3', 'grid_cards', 'comparison', 'process_flow', 'chart_bar', 'table', 'coding', 'network'],
+    partial: ['chart_line'],
+    avoid: [],
+  },
+  neon: {
+    supported: ['title', 'text_features', 'columns_3', 'grid_cards', 'comparison', 'process_flow', 'chart_bar', 'chart_line'],
+    partial: [],
+    avoid: ['table', 'coding', 'network'],
+  },
+  retro: {
+    supported: ['title', 'text_features', 'process_flow', 'chart_bar'],
+    partial: ['grid_cards'],
+    avoid: ['columns_3', 'comparison', 'table', 'coding', 'network', 'chart_line'],
+  },
+  brutalist: {
+    supported: ['title', 'text_features', 'process_flow', 'chart_bar', 'table'],
+    partial: [],
+    avoid: ['columns_3', 'grid_cards', 'comparison', 'coding', 'network', 'chart_line'],
+  },
+};
 
-Also, determine if the topic is "simple" or "complex" based on the depth required.
-- "complex": Requires research or step-by-step problem solving.
-- "simple": General knowledge or creative generation.
+/**
+ * Build a template-aware advisory block for the Slide Designer agent.
+ */
+export function getTemplateAdvisory(template: string): string {
+  const t = THEME_LAYOUT_SUPPORT[template];
+  if (!t) return '';
+
+  const lines: string[] = [
+    `\n## TEMPLATE LAYOUT ADVISORY (template: "${template}")`,
+    `PREFERRED layouts (render perfectly): ${t.supported.join(', ')}`,
+  ];
+  if (t.partial.length) {
+    lines.push(`PARTIAL support (may use fallback rendering): ${t.partial.join(', ')}`);
+  }
+  if (t.avoid.length) {
+    lines.push(`AVOID these layouts — they WILL NOT render correctly on this template: ${t.avoid.join(', ')}`);
+    lines.push(`Conversion rules for avoided layouts:`);
+    if (t.avoid.includes('table'))      lines.push(`  - Instead of "table" → use "text_features" with bullet-formatted rows`);
+    if (t.avoid.includes('coding'))     lines.push(`  - Instead of "coding" → use "text_features" with bullets describing the code`);
+    if (t.avoid.includes('network'))    lines.push(`  - Instead of "network" → use "process_flow" to show relationships`);
+    if (t.avoid.includes('comparison')) lines.push(`  - Instead of "comparison" → use "text_features" with Side A / Side B labeled bullets`);
+    if (t.avoid.includes('columns_3')) lines.push(`  - Instead of "columns_3" → use "text_features" with 3 bullets`);
+    if (t.avoid.includes('grid_cards')) lines.push(`  - Instead of "grid_cards" → use "text_features" with 4 bullets`);
+    if (t.avoid.includes('chart_line')) lines.push(`  - Instead of "chart_line" → use "chart_bar" (same data shape)`);
+  }
+  return lines.join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LAYOUT DATA CONTRACTS
+// Exact JSON schema + constraints + concrete example per layout.
+// Used by Slide Designer and Slide Agent.
+// ═══════════════════════════════════════════════════════════════
+
+export const LAYOUT_DATA_CONTRACTS = `
+## AVAILABLE LAYOUTS — STRICT DATA CONTRACTS
+You MUST use ONLY the layout values listed below. Each has REQUIRED content fields and CONSTRAINTS.
+
+### LAYOUT 1: "title"
+USE: First slide only (intro / opening).
+REQUIRED: slide.subtitle (catchy tagline, 5-10 words). content can be empty {}.
+CONSTRAINTS: Only use for slide_id 1. Always provide a subtitle field on the slide object.
+EXAMPLE:
+{
+  "slide_id": 1, "title": "The Rise of AI", "subtitle": "How machines learned to think",
+  "layout": "title", "content": {}
+}
+
+### LAYOUT 2: "text_features"
+USE: Standard bullet-point content slides — the default workhorse layout.
+REQUIRED: content.bullets: string[] (3–6 items, each ≤ 15 words)
+CONSTRAINTS: Each bullet is a concise, standalone point.
+EXAMPLE:
+{
+  "title": "Key Benefits", "layout": "text_features",
+  "content": { "bullets": ["Faster processing speed by 10x", "Lower energy consumption", "Reduced operational costs"] }
+}
+
+### LAYOUT 3: "columns_3"
+USE: Three parallel concepts or features as 3 side-by-side cards.
+REQUIRED: content.bullets: string[] — EXACTLY 3 items.
+CONSTRAINTS: Must have EXACTLY 3 bullets. Each bullet becomes one card.
+EXAMPLE:
+{
+  "title": "Three Pillars of Security", "layout": "columns_3",
+  "content": { "bullets": ["Encryption: End-to-end AES-256", "Authentication: Multi-factor biometrics", "Authorization: Role-based access"] }
+}
+
+### LAYOUT 4: "grid_cards"
+USE: Four related items displayed as a 2×2 grid of cards.
+REQUIRED: content.bullets: string[] — EXACTLY 4 items.
+CONSTRAINTS: Must have EXACTLY 4 bullets. Each becomes one grid card.
+EXAMPLE:
+{
+  "title": "Core Features", "layout": "grid_cards",
+  "content": { "bullets": ["Real-time sync across devices", "AI-powered suggestions", "End-to-end encryption", "Offline-first architecture"] }
+}
+
+### LAYOUT 5: "comparison"
+USE: Compare two concepts side-by-side (A vs B).
+REQUIRED: content.bullets: string[] — EXACTLY 4 items.
+RENDERING: First 2 bullets = Left panel (Side A). Last 2 bullets = Right panel (Side B).
+CONSTRAINTS: Exactly 4 bullets. Bullets 1-2 = Side A, bullets 3-4 = Side B.
+EXAMPLE:
+{
+  "title": "SQL vs NoSQL", "layout": "comparison",
+  "content": { "bullets": ["Structured schema with ACID", "Vertical scaling, proven reliability", "Flexible schema, document-based", "Horizontal scaling, high throughput"] }
+}
+
+### LAYOUT 6: "process_flow"
+USE: Sequential steps, timelines, workflows. Renders as a horizontal chain with arrows.
+REQUIRED: content.flow_steps: string[] (3–6 steps, each ≤ 10 words)
+CONSTRAINTS: Use flow_steps (NOT bullets). 3–6 items. Each step is a short label.
+EXAMPLE:
+{
+  "title": "CI/CD Pipeline", "layout": "process_flow",
+  "content": { "flow_steps": ["Code Commit", "Build & Test", "Staging Deploy", "Production Release"] }
+}
+
+### LAYOUT 7: "chart_bar"
+USE: Compare discrete values across categories. Renders vertical bar chart.
+REQUIRED: content.chart_data: { labels: string[], values: number[], label?: string }
+CONSTRAINTS: labels.length MUST equal values.length. Values must be positive numbers. 3–7 data points.
+EXAMPLE:
+{
+  "title": "Market Share 2025", "layout": "chart_bar",
+  "content": { "chart_data": { "labels": ["Chrome", "Safari", "Firefox", "Edge"], "values": [65, 19, 8, 5], "label": "Browser Market Share (%)" } }
+}
+
+### LAYOUT 8: "chart_line"
+USE: Show trends, growth, or change over time. Renders line graph with data points.
+REQUIRED: content.chart_data: { labels: string[], values: number[], label?: string }
+CONSTRAINTS: Same structure as chart_bar. labels and values must match in length.
+EXAMPLE:
+{
+  "title": "Revenue Growth", "layout": "chart_line",
+  "content": { "chart_data": { "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [120, 180, 250, 310], "label": "Revenue ($M)" } }
+}
+
+### LAYOUT 9: "table"
+USE: Structured data with rows and columns — facts, specs, reference data.
+REQUIRED: content.table_data: { headers: string[], rows: string[][] }
+CONSTRAINTS: Each row must have same cell count as headers. Keep to 3–5 columns, 3–5 rows.
+EXAMPLE:
+{
+  "title": "Language Comparison", "layout": "table",
+  "content": { "table_data": { "headers": ["Language", "Typing", "Speed", "Use Case"], "rows": [["Python", "Dynamic", "Moderate", "AI/ML"], ["Rust", "Static", "Fast", "Systems"], ["JavaScript", "Dynamic", "Moderate", "Web"]] } }
+}
+
+### LAYOUT 10: "coding"
+USE: Code walkthroughs. Renders a VS Code–style editor with syntax highlighting.
+REQUIRED: content.code_snippet: string (code with \\n for newlines)
+OPTIONAL: content.highlight_lines: number[] (1-indexed line numbers to emphasize; non-highlighted lines dim)
+CONSTRAINTS: Code must be syntactically valid. Use \\n for newlines. Keep to 8–15 lines per slide.
+EXAMPLE:
+{
+  "title": "Binary Search", "layout": "coding",
+  "content": { "code_snippet": "def binary_search(arr, target):\\n    low, high = 0, len(arr) - 1\\n    while low <= high:\\n        mid = (low + high) // 2\\n        if arr[mid] == target:\\n            return mid\\n        elif arr[mid] < target:\\n            low = mid + 1\\n        else:\\n            high = mid - 1\\n    return -1", "highlight_lines": [3, 4, 5] }
+}
+
+### LAYOUT 11: "network"
+USE: Graph structures, neural networks, entity relationships, system diagrams.
+REQUIRED: content.network_data: { nodes: [...], edges: [...] }
+  - nodes: Array of { id: string, label: string, type?: "input"|"hidden"|"output"|"default" }
+  - edges: Array of { source: string, target: string, label?: string, type?: "directed"|"undirected"|"bidirectional" }
+CONSTRAINTS: Every edge source/target must reference a valid node id. 4–10 nodes ideal.
+EXAMPLE:
+{
+  "title": "Neural Network", "layout": "network",
+  "content": { "network_data": { "nodes": [{"id":"i1","label":"Features","type":"input"}, {"id":"h1","label":"Dense 128","type":"hidden"}, {"id":"o1","label":"Output","type":"output"}], "edges": [{"source":"i1","target":"h1","type":"directed"}, {"source":"h1","target":"o1","type":"directed","label":"softmax"}] } }
+}
+
+## HARD RULES
+- "title" layout is ONLY for slide_id 1.
+- "columns_3" MUST have EXACTLY 3 bullets.
+- "grid_cards" MUST have EXACTLY 4 bullets.
+- "comparison" MUST have EXACTLY 4 bullets (2 per side).
+- "process_flow" MUST use flow_steps (not bullets). 3–6 steps.
+- "chart_bar" / "chart_line" labels and values arrays MUST be same length. Values must be numbers.
+- "table" rows MUST have same cell count as headers. 3–5 cols, 3–5 rows.
+- "coding" code_snippet MUST be syntactically valid. 8–15 lines. Use \\n for newlines.
+- "network" edges MUST reference existing node ids.
+- NEVER use more than 2 consecutive "text_features" slides — vary layouts for engagement.
+- Include ONLY the content fields relevant to the chosen layout. No empty arrays or empty strings for unused fields.
+`;
+
+
+// ═══════════════════════════════════════════════════════════════
+// AGENT 1: RESEARCH DECISION
+// Decides whether the topic needs web research.
+// ═══════════════════════════════════════════════════════════════
+
+export const RESEARCH_DECISION_PROMPT = (topic: string, genre: string) => `
+You are a Research Decision Agent.
+Topic: "${topic}"
+Genre: "${genre}"
+
+Your job: Decide whether this topic requires external web research to produce an accurate, high-quality video.
+
+RESEARCH NEEDED when:
+- Topic involves recent events, current statistics, or rapidly changing information
+- Topic requires specific factual data (dates, numbers, names, scientific findings)
+- Topic is about a real person, company, technology, or historical event
+- Genre is "history", "science", or "tech" with specific factual claims needed
+
+RESEARCH NOT NEEDED when:
+- Topic is creative/fictional (stories, myths, motivational content)
+- Topic is about well-known general concepts that any educated person knows
+- Topic is about abstract/philosophical ideas
+- Genre is "story" or purely conceptual "general" topics
+- Topic is about coding concepts/algorithms (these are well-established knowledge)
 
 Output STRICT JSON:
 {
-  "genre": "history" | "mathematics" | "science" | "tech" | "story" | "coding" | "general",
-  "complexity": "simple" | "complex"
+  "needs_research": true | false,
+  "reason": "One sentence explaining your decision"
 }
 `;
 
-const BASE_VISUAL_RULES = `
-## AVAILABLE VISUAL LAYOUTS (TOOLS)
-Select the best layout for each slide:
-1. "intro": First slide only. Must include a catchy, stylish & relevant "subtitle" (tagline).
-2. "bullets": Standard list. Content: { bullets: ["pt1", "pt2"] }
-3. "columns_3": Exactly 3 items. Content: { bullets: ["1", "2", "3"] }
-4. "grid_cards": Exactly 4 items. Content: { bullets: ["1", "2", "3", "4"] }
-5. "comparison": Compare A vs B. Content: { bullets: ["A1 (Side A)", "A2 (Side A)", "B1 (Side B)", "B2 (Side B)"] } — first 2 bullets are Side A, last 2 are Side B.
-6. "process_flow": Steps, timelines, evolution. Content: { flow_steps: ["Step 1", "Step 2"] }
-7. "chart_bar": Compare values. Content: { chart_data: { labels: ["A", "B"], values: [10, 20], label: "Metric" } }
-8. "chart_line": Trends over time. Content: { chart_data: { labels: ["Year 1", "Year 2"], values: [10, 20], label: "Growth" } }
-9. "coding": Code walkthroughs. Content: { code_snippet: "function add(a, b) {\n  return a + b;\n}", highlight_lines: [2] }
-10. "table": Structured data tables. Content: { table_data: { headers: ["Col1", "Col2", "Col3"], rows: [["R1C1", "R1C2", "R1C3"], ["R2C1", "R2C2", "R2C3"]] } }
+
+// ═══════════════════════════════════════════════════════════════
+// AGENT 2: QUESTION AGENT
+// Generates targeted search queries for the Research Agent.
+// ═══════════════════════════════════════════════════════════════
+
+export const QUESTION_AGENT_PROMPT = (topic: string, genre: string) => `
+You are a Research Question Agent.
+Topic: "${topic}"
+Genre: "${genre}"
+
+Your job: Generate 3–5 highly targeted search queries that the Research Agent will use to find the most relevant and accurate information for creating a video about this topic.
+
+QUERY DESIGN RULES:
+- Each query should target a DIFFERENT aspect of the topic.
+- Be specific — avoid vague or overly broad queries.
+- Include queries for: key facts/data, recent developments, expert perspectives, visual/quantitative data.
+- For "history": include queries about timeline, key figures, cause & effect, lasting impact.
+- For "science": include queries about mechanism, latest research, data/statistics, real-world applications.
+- For "tech": include queries about how it works, benchmarks/comparisons, pros/cons, use cases.
+- For "mathematics": include queries about theorem history, applications, visual explanations.
+- For "coding": include queries about algorithm complexity, implementations, comparisons with alternatives.
+
+Example for topic "History of the Internet":
+{
+  "queries": [
+    "Timeline of key events in internet history ARPANET to modern web",
+    "Internet growth statistics users worldwide 2000 to 2025",
+    "Key inventors and pioneers of the internet contributions",
+    "Impact of internet on global economy GDP statistics",
+    "Major milestones in internet technology evolution"
+  ]
+}
+
+Output STRICT JSON:
+{
+  "queries": ["query 1", "query 2", "query 3", ...]
+}
 `;
 
-const BASE_OUTPUT_FORMAT = `
-## OUTPUT FORMAT
+
+// ═══════════════════════════════════════════════════════════════
+// AGENT 3: RESEARCH AGENT
+// (No LLM prompt — executes Tavily searches programmatically)
+// ═══════════════════════════════════════════════════════════════
+
+
+// ═══════════════════════════════════════════════════════════════
+// AGENT 4: FLOW AGENT
+// Plans content distribution across slides.
+// ═══════════════════════════════════════════════════════════════
+
+export const FLOW_AGENT_PROMPT = (
+  topic: string,
+  genre: string,
+  slideCount: number,
+  researchData: string,
+  outline?: any[]
+) => `
+You are a Flow Planning Agent — an expert at structuring educational and engaging video narratives.
+Topic: "${topic}"
+Genre: "${genre}"
+Number of slides: ${slideCount}
+${outline && outline.length > 0 ? `User-provided outline (use as starting point): ${JSON.stringify(outline)}` : ''}
+
+Research Data Available:
+${researchData && researchData !== 'No research needed.' ? researchData.substring(0, 4000) : 'No external research — use general knowledge.'}
+
+Your job: Create a detailed FLOW PLAN that describes exactly what content should appear on each slide.
+This plan ensures:
+1. ALL important aspects of the topic are covered — nothing is missed.
+2. The narrative flows logically from introduction to conclusion.
+3. Content is distributed evenly — no slide is overloaded, no slide is empty.
+4. Research data (if available) is woven into the appropriate slides.
+
+GENRE-SPECIFIC FLOW GUIDANCE:
+${{
+  history: `Start with context (era, setting) → Timeline of events → Key figures and their roles → Turning points → Impact/consequences → Legacy and modern relevance.`,
+  mathematics: `State the concept/theorem → Explain prerequisites → Show step-by-step derivation → Provide visual example → Apply to a problem → Verify result → Discuss applications.`,
+  science: `Pose the question/hypothesis → Explain the mechanism → Present evidence/data → Show experimental results → Discuss applications → Summarize conclusions.`,
+  tech: `State the problem → Explain the solution approach → Show architecture/system design → Walk through implementation → Compare alternatives → Discuss best practices.`,
+  story: `Set the scene → Introduce characters → Present the conflict → Build tension through challenges → Reach the climax → Resolve and deliver the moral.`,
+  coding: `Define the problem → Explain the algorithm approach → Show the code in logical chunks → Trace through an example → Analyze complexity → Discuss edge cases and alternatives.`,
+  general: `Hook the audience → Present key concepts one by one → Support with data/examples → Summarize takeaways.`,
+}[genre] || 'Hook → Key points → Supporting details → Conclusion.'}
+
+INSTRUCTIONS:
+1. Think about the ideal narrative arc for this topic and genre.
+2. For each slide, describe:
+   - "focus": What is this slide about? (1 sentence)
+   - "key_points": What specific points must be covered? (array of strings)
+   - "data_to_include": Any specific data, numbers, facts, or code from the research that should appear here.
+   - "suggested_visual": A hint about what visual representation would work best (e.g., "timeline", "bar chart of stats", "code snippet", "comparison table", "bullet points").
+
+Output STRICT JSON:
+{
+  "flow": [
+    {
+      "slide_number": 1,
+      "title": "Suggested slide title",
+      "focus": "What this slide covers",
+      "key_points": ["Point 1", "Point 2", "Point 3"],
+      "data_to_include": "Specific data/facts from research or general knowledge",
+      "suggested_visual": "What visual element would best represent this content"
+    }
+  ]
+}
+`;
+
+
+// ═══════════════════════════════════════════════════════════════
+// AGENT 5: CONTENT AGENT
+// Generates raw text content for each slide by merging
+// the flow plan with research data and general knowledge.
+// ═══════════════════════════════════════════════════════════════
+
+export const CONTENT_AGENT_PROMPT = (
+  topic: string,
+  genre: string,
+  flowPlan: any[],
+  researchData: string,
+  language: string = 'English'
+) => `
+You are a Content Generation Agent — an expert writer who creates rich, accurate slide content.
+Topic: "${topic}"
+Genre: "${genre}"
+**Content Language: ${language}** — ALL text MUST be written in ${language}.
+
+Flow Plan (what each slide should cover):
+${JSON.stringify(flowPlan, null, 2)}
+
+Research Data:
+${researchData && researchData !== 'No research needed.' ? researchData.substring(0, 6000) : 'No external research — use your knowledge base.'}
+
+Your job: For EACH slide in the flow plan, generate the COMPLETE content needed.
+This includes all text, data points, statistics, code snippets, or any information that should appear on the slide.
+
+CONTENT GENERATION RULES:
+- For each slide, follow the flow plan's "focus" and "key_points" exactly.
+- Merge research data with your own knowledge — use research facts where available, fill gaps with your knowledge.
+- Write concise, impactful content — this is for SLIDES, not an essay.
+- Bullet points should be 5-15 words each.
+- If the flow plan suggests data/charts, provide REAL or realistic numerical data.
+- If the flow plan suggests code, write ACTUAL working code (not pseudocode).
+- If the flow plan suggests a table, provide structured data with headers and rows.
+- Write in ${language} throughout.
+
+GENRE-SPECIFIC TONE:
+${{
+  history: 'Documentary narrator — authoritative, vivid, grounded in facts and dates.',
+  mathematics: 'Patient tutor — logical, step-by-step, building understanding progressively.',
+  science: 'Curious scientist — evidence-based, wonder-invoking, precise yet accessible.',
+  tech: 'Practical engineer — clear, solution-oriented, specific with real tool/tech names.',
+  story: 'Cinematic storyteller — emotional, vivid imagery, character-driven arcs.',
+  coding: 'Senior developer — precise, peer-to-peer, walking through code with clarity.',
+  general: 'Friendly podcast host — conversational, relatable, making complex things simple.',
+}[genre] || 'Clear and engaging communicator.'}
+
+Output STRICT JSON:
+{
+  "slides": [
+    {
+      "slide_number": 1,
+      "title": "Slide Title",
+      "subtitle": "Optional subtitle / tagline (required for slide 1)",
+      "content_text": "The main explanation or narrative for this slide (2-3 sentences)",
+      "bullet_points": ["Point 1", "Point 2", "Point 3"],
+      "data": {
+        "type": "none" | "chart" | "table" | "code" | "flow" | "network",
+        "chart_labels": ["label1", "label2"],
+        "chart_values": [10, 20],
+        "chart_label": "Metric name",
+        "table_headers": ["Col1", "Col2"],
+        "table_rows": [["R1C1", "R1C2"]],
+        "code_snippet": "actual code here",
+        "code_language": "python",
+        "flow_steps": ["Step 1", "Step 2"],
+        "network_nodes": [{"id": "n1", "label": "Node 1", "type": "default"}],
+        "network_edges": [{"source": "n1", "target": "n2", "type": "directed"}]
+      }
+    }
+  ]
+}
+
+IMPORTANT: Only populate the "data" fields that are relevant. Set "type" to "none" if the slide is purely text-based.
+`;
+
+
+// ═══════════════════════════════════════════════════════════════
+// AGENT 6: SLIDE DESIGNER
+// Picks the best visual layout for each slide based on content
+// and template capabilities.
+// ═══════════════════════════════════════════════════════════════
+
+export const SLIDE_DESIGNER_PROMPT = (
+  slideContents: any[],
+  template: string
+) => `
+You are a Slide Designer Agent — an expert at choosing the most impactful visual layout for presentation slides.
+
+Slide Contents to Design:
+${JSON.stringify(slideContents, null, 2)}
+
+${getTemplateAdvisory(template)}
+
+Your job: For EACH slide, choose the BEST visual layout from the available options.
+Your goal is to maximize visual engagement, data clarity, and layout diversity.
+
+DECISION FRAMEWORK:
+1. Slide 1 MUST use "title" layout (intro slide).
+2. Look at each slide's content:
+   - Has bullet points only → "text_features" (3-6 bullets), "columns_3" (exactly 3), "grid_cards" (exactly 4), or "comparison" (exactly 4, two vs two)
+   - Has sequential/timeline data → "process_flow"
+   - Has numerical comparison data → "chart_bar"
+   - Has trend/time-series data → "chart_line"
+   - Has structured row/column data → "table"
+   - Has code → "coding"
+   - Has node/edge relationships → "network"
+3. NEVER use the same layout 3+ times in a row.
+4. Ensure at least 3-4 DIFFERENT layout types across the deck.
+5. Check the TEMPLATE ADVISORY above — avoid layouts not supported by the template.
+
+LAYOUT SELECTION RULES:
+- If data.type === "chart" → use "chart_bar" or "chart_line" based on whether the data is categorical (bar) or time-series (line)
+- If data.type === "table" → use "table"
+- If data.type === "code" → use "coding"
+- If data.type === "flow" → use "process_flow"
+- If data.type === "network" → use "network"
+- If data.type === "none" with 3 bullet points → consider "columns_3"
+- If data.type === "none" with 4 bullet points → consider "grid_cards"
+- If content suggests A vs B comparison → use "comparison"
+- Default fallback → "text_features"
+
+Output STRICT JSON:
+{
+  "designs": [
+    {
+      "slide_number": 1,
+      "layout": "title",
+      "reasoning": "First slide, intro with subtitle"
+    },
+    {
+      "slide_number": 2,
+      "layout": "process_flow",
+      "reasoning": "Sequential timeline data is best shown as connected nodes"
+    }
+  ]
+}
+`;
+
+
+// ═══════════════════════════════════════════════════════════════
+// AGENT 7: SLIDE AGENT
+// Generates the final JSON for each slide following exact
+// layout data contracts. This is the precision agent.
+// ═══════════════════════════════════════════════════════════════
+
+export const SLIDE_AGENT_PROMPT = (
+  slideContents: any[],
+  slideDesigns: any[],
+  template: string,
+  language: string = 'English'
+) => `
+You are a Slide Production Agent — you generate the FINAL JSON output for each slide.
+Your output will be directly consumed by the rendering engine. It MUST be perfectly structured.
+
+**All text MUST be in ${language}.**
+
+Slide Contents (from Content Agent):
+${JSON.stringify(slideContents, null, 2)}
+
+Slide Designs (from Slide Designer):
+${JSON.stringify(slideDesigns, null, 2)}
+
+${LAYOUT_DATA_CONTRACTS}
+
+Your job: For EACH slide, take the content and the chosen layout, and produce the EXACT JSON structure that the rendering engine expects.
+
+PRODUCTION RULES:
+1. The "layout" field MUST match exactly what the Slide Designer chose.
+2. The "content" object MUST contain ONLY the fields required by that layout (no extras).
+3. Follow ALL constraints in the Layout Data Contracts above.
+4. Transform the raw content data into the correct structure:
+   - For "text_features": Extract the most important 3-6 bullet points from content
+   - For "columns_3": Select exactly 3 key items
+   - For "grid_cards": Select exactly 4 key items
+   - For "comparison": Structure exactly 4 bullets (2 per side)
+   - For "process_flow": Convert steps into flow_steps array (3-6 items, ≤10 words each)
+   - For "chart_bar"/"chart_line": Structure chart_data with matching labels/values arrays
+   - For "table": Structure table_data with headers and matching rows
+   - For "coding": Use the code_snippet directly, add highlight_lines for key lines
+   - For "network": Structure network_data with valid node ids and edges
+5. slide_id should be sequential (1, 2, 3, ...)
+6. Slide 1 MUST have a "subtitle" field.
+
 Output STRICT JSON:
 {
   "slides": [
     {
       "slide_id": 1,
       "title": "Slide Title",
-      "subtitle": "Short tagline for the slide",
-      "layout": "intro" | "bullets" | "columns_3" | "grid_cards" | "comparison" | "process_flow" | "chart_bar" | "chart_line" | "coding",
-      "content": {
-        "bullets": [], 
-        "flow_steps": [], 
-        "chart_data": { "labels": [], "values": [], "label": "" },
-        "code_snippet": "",
-        "highlight_lines": []
-      },
-      "narration": "Voiceover script (approx 15 sec). conversational & engaging."
+      "subtitle": "Tagline (required for slide 1)",
+      "layout": "title",
+      "content": {}
+    },
+    {
+      "slide_id": 2,
+      "title": "Slide Title",
+      "layout": "text_features",
+      "content": { "bullets": ["Point 1", "Point 2", "Point 3"] }
     }
   ]
 }
 `;
 
-const GENRE_INSTRUCTIONS = {
-  history: `
-    STYLE: Documentary, Narrative, Archival.
-    STRUCTURE:
-    - Establish context (Time, Place, Key Figures).
-    - Use "process_flow" for Timelines of events.
-    - Use "comparison" when opposing sides or figures are involved.
-    - End with the legacy or impact.
-  `,
-  mathematics: `
-    STYLE: Tutor, Logical, Step-by-Step.
-    STRUCTURE:
-    1. Introduction: Explain the core Concept/Theorem clearly FIRST.
-    2. Problem Setup: Present the problem or equation.
-    3. Step-by-Step Solution: Dedicate slides to solving it part-by-part.
-    4. Visualization: Use "chart_line" for functions or "process_flow" for logical steps.
-    5. Conclusion: Verify the answer and recap.
-  `,
-  science: `
-    STYLE: Verification, Empirical, Wonder.
-    STRUCTURE:
-    - Hypothesis or Question.
-    - Mechanism: How does it work? (Use "process_flow").
-    - Evidence/Data: Use "chart_bar" or "chart_line".
-    - Real-world Application.
-  `,
-  tech: `
-    STYLE: Engineering, Practical, Best-Practices.
-    STRUCTURE:
-    - Problem Statement.
-    - Architecture/Solution High Level.
-    - Code/Implementation Details (Use "bullets" or "process_flow" for logic).
-    - Pros/Cons (Use "comparison" or "columns_3").
-  `,
-  story: `
-    STYLE: Cinematic, Emotional, Character-Driven.
-    STRUCTURE:
-    - The Setup (Status Quo).
-    - The Inciting Incident.
-    - Rising Action (Challenges).
-    - Climax.
-    - Resolution.
-  `,
-  coding: `
-    STYLE: Precision, Developer-Focused, Clear.
-    STRUCTURE:
-    1. Problem Statement: Briefly explain the problem to be solved.
-    2. Algorithms/Approach: Explain the logic/methodology (Use "process_flow" or "bullets").
-    3. Coding Walkthrough: Use multiple "coding" slides to step through the solution.
-       - BREAK THE CODE INTO CHECKPOINTS. Do not dump the whole code at once if it's long.
-       - Slide A: Initial setup/variables. (highlight_lines: [1, 2])
-       - Slide B: The loop or core logic. (highlight_lines: [3, 4, 5])
-       - Slide C: Return statement or result. (highlight_lines: [6])
-    4. Complexity Analysis: Time and Space complexity.
-  `,
-  general: `
-    STYLE: NotebookLM Host, Friendly, Clear.
-    STRUCTURE:
-    - Hook.
-    - Key Points (3-4 major takeaways).
-    - Summary.
-  `
-};
 
-export const RESEARCH_DECISION_PROMPT = (topic: string, genre: string) => `
-You are a Research Director.
-Topic: "${topic}"
-Genre: "${genre}"
+// ═══════════════════════════════════════════════════════════════
+// AGENT 8: NARRATION AGENT
+// Generates per-element narration for each slide.
+// ═══════════════════════════════════════════════════════════════
 
-Goal: Determine if this topic requires external web research to be accurate.
-- "Simple" or "Creative" topics (e.g., "A story about a cat", "Motivation") DO NOT need research.
-- "Factual", "Technical", or "Historical" topics (e.g., "History of Rome", "Latest AI trends") DO need research.
-
-Output STRICT JSON:
-{
-  "needs_research": boolean,
-  "reason": "Short explanation",
-  "search_query": "The best search query to find this information(if needed, else null)"
-}
-`;
-
-// --- 1. FLOW ARCHITECT ---
-export const FLOW_PROMPT = (topic: string, genre: string, outline: string[]) => `
-You are an expert Content Architect focusing on narrative flow and pacing.
-Topic: "${topic}"
-Genre: "${genre}"
-Current Outline: ${JSON.stringify(outline)}
-
-Goal: Refine the outline to ensure a logical, engaging progression.
-
-INSTRUCTIONS:
-1. First, THINK about the pacing and structure. Write a brief "THOUGHT" block explaining your plan.
-2. Then, output the STRICT JSON.
-
-Example:
-THOUGHT: I will ensure the intro is strong...
-\`\`\`json
-{ ... }
-\`\`\`
-
-Output STRICT JSON:
-{
-  "refined_outline": [
-    { "title": "Slide Title", "visual_cue": "Brief note on visual focus (e.g., 'Timeline of 1990s', 'Chart of growth')" }
-  ]
-}
-`;
-
-// --- 2. CONTENT GENERATOR ---
-export const CONTENT_PROMPT = (
+export const NARRATION_AGENT_PROMPT = (
   topic: string,
   genre: string,
-  outline: { title: string, visual_cue: string }[] | string[],
-  template: string,
-  researchNotes?: string,
+  slides: any[],
   language: string = 'English'
 ) => `
-You are an expert Slide Content Creator.
+You are a Narration Agent — an expert voiceover scriptwriter.
 Topic: "${topic}"
 Genre: "${genre}"
-Template: "${template}" (Visual style)
-**Content Language: ${language}** — ALL slide titles, bullets, labels, and text MUST be written in ${language}.
+**Narration Language: ${language}** — ALL narration MUST be in ${language}.
 
-Outline: ${JSON.stringify(outline)}
-Genre Rules:
-${GENRE_INSTRUCTIONS[genre as keyof typeof GENRE_INSTRUCTIONS] || GENRE_INSTRUCTIONS['general']}${researchNotes && researchNotes !== 'Research skipped (not needed.)' && researchNotes !== 'Research skipped (error).' ? `
+Slides: ${JSON.stringify(slides)}
 
-RESEARCH NOTES (CRITICAL — use these facts in the slides):
-${researchNotes}` : ''}
+Your job: Write engaging voiceover narration for EACH slide.
+You MUST output EXACTLY ${slides.length} narration entries — one for every slide.
 
-Goal: generate the JSON content for each slide.
-For 'nanobanna' template, use 'grid_cards' or 'columns_3' often.
-For 'coding' genre, use 'coding' layout with realistic code snippets.
+NARRATION RULES:
+- Write narration that covers EVERY visual element on the slide:
+  • For the TITLE: Start with an introduction or transition sentence.
+  • For each BULLET POINT: Explain or expand on it naturally.
+  • For each FLOW STEP: Narrate the progression from one step to the next.
+  • For CHART data: Call out key numbers, trends, and what they mean.
+  • For TABLE data: Highlight the most important rows/comparisons.
+  • For CODE: Walk through what the highlighted lines do.
+  • For NETWORK graphs: Describe the relationships and connections.
 
-${BASE_VISUAL_RULES}
+- The narration for each slide should be 3-6 sentences (approx 15-25 seconds when spoken).
+- Create smooth transitions between slides ("Now let's look at...", "Building on that...", "Next...").
+- Match the genre's tone:
+${{
+  history: '  Documentary narrator — "In the year...", "This would change the course of...", "The legacy lives on..."',
+  mathematics: '  Patient tutor — "Notice how...", "This gives us...", "Therefore...", "Let\'s verify..."',
+  science: '  Curious scientist — "Remarkably...", "The data shows...", "What\'s fascinating is..."',
+  tech: '  Practical engineer — "Here\'s how it works...", "In production...", "The key trade-off is..."',
+  story: '  Cinematic storyteller — "Imagine...", "Little did they know...", "And then everything changed..."',
+  coding: '  Senior developer — "Let\'s trace through...", "Notice this line...", "This runs in O(n) because..."',
+  general: '  Friendly podcast host — "Here\'s the thing...", "Think of it like...", "The big takeaway is..."',
+}[genre] || '  Clear, engaging communicator.'}
 
-INSTRUCTIONS:
-1. First, THINK about the best layout for each slide based on the content. Write a "THOUGHT" block.
-2. Then generate the JSON.
+- For the FIRST slide: Create an exciting opening that hooks the viewer.
+- For the LAST slide: Deliver a strong conclusion with a memorable closing statement.
 
-Example:
-THOUGHT: Slide 2 needs a comparison layout because...
-\`\`\`json
-{ ... }
-\`\`\`
-
-Output STRICT JSON (Array of objects):
+Output STRICT JSON:
 {
-  "slides": [
+  "slide_narrations": [
     {
-      "title": "Title from outline",
-      "layout": "chosen_layout",
-      "content": { ... follows layout rules ... }
+      "slide_id": 1,
+      "segments": [
+        "Opening hook sentence about the title...",
+        "Brief expansion on the subtitle/topic..."
+      ]
+    },
+    {
+      "slide_id": 2,
+      "segments": [
+        "Transition and title introduction...",
+        "Narration for first bullet/element...",
+        "Narration for second bullet/element...",
+        "Narration for third bullet/element..."
+      ]
     }
   ]
 }
+
+IMPORTANT:
+- Each "segments" array has one narration segment per visual element on that slide.
+- The segments will be concatenated into a single voiceover string, so they must flow naturally when read together.
+- You MUST produce exactly ${slides.length} entries in slide_narrations.
 `;
 
-// --- 3. NARRATION WRITER ---
-export const NARRATION_PROMPT = (topic: string, genre: string, scriptContent: any[], language: string = 'English') => `
-You are an expert Voiceover Scriptwriter.
-Topic: "${topic}"
-Genre: "${genre}"
-**Narration Language: ${language}** — ALL narration text MUST be written in ${language}.
-Slides: ${JSON.stringify(scriptContent)}
 
-Goal: Write a cohesive, engaging voiceover script for EACH slide.
-You MUST output EXACTLY ${scriptContent.length} narrations — one for every slide, in the same order.
-
-INSTRUCTIONS:
-1. First, THINK about the tone, pacing, and transitions. Write a "THOUGHT" block.
-2. Output the JSON.
-
-Example:
-THOUGHT: I will use an enthusiastic tone for the intro...
-\`\`\`json
-{ ... }
-\`\`\`
-
-Output STRICT JSON:
-{
-  "narrations": [
-    "Narration text for slide 1...",
-    "Narration text for slide 2..."
-  ]
-}
-`;
-
-// --- 4. REVIEWER (CRITIC) ---
-export const REVIEWER_PROMPT = (topic: string, script: any) => `
-You are a Critical Content Editor.
-Topic: "${topic}"
-Draft Script: ${JSON.stringify(script)}
-
-Goal: Critique the script for quality, accuracy, and engagement.
-
-INSTRUCTIONS:
-1. First, THINK about the strengths and weaknesses. Write a "THOUGHT" block.
-2. Output the JSON critique.
-
-Example:
-THOUGHT: The pacing is a bit slow in the middle...
-\`\`\`json
-{ ... }
-\`\`\`
-
-Output STRICT JSON:
-{
-  "overall_feedback": "Overall summary of quality.",
-  "suggestions": [
-     { "slide_index": 0, "suggestion": "Make the hook punchier." },
-     { "slide_index": 2, "suggestion": "Use a chart instead of bullets for data." }
-  ],
-  "needs_improvement": true
-}
-
-IMPORTANT: "needs_improvement" must be exactly true or false (not the word 'boolean').
-`;
-
-// --- 5. IMPROVER ---
-export const IMPROVER_PROMPT = (originalScript: any, critique: any) => `
-You are a Senior Content Polisher.
-Original Script: ${JSON.stringify(originalScript)}
-Critique: ${JSON.stringify(critique)}
-
-Goal: Apply the suggestions to IMPROVE the script.
-
-${BASE_VISUAL_RULES}
-
-INSTRUCTIONS:
-1. First, THINK about how to apply the fix. Write a "THOUGHT" block.
-2. Output the FULL refined script — include ALL slides, even unchanged ones.
-3. Every slide MUST include "slide_id" (1-based index) and must use only the layouts listed above.
-
-Example:
-THOUGHT: I will shorten the text on slide 3...
-\`\`\`json
-{ ... }
-\`\`\`
-
-Output STRICT JSON (The FULL refined script):
-{
-  "refinedScript": {
-    "slides": [
-      { "slide_id": 1, "title": "...", "layout": "intro", "content": { ... }, "narration": "..." },
-      { "slide_id": 2, "title": "...", "layout": "bullets", "content": { ... }, "narration": "..." }
-    ]
-  }
-}
-`;
-
-export const GENERATOR_PROMPT = (
-  topic: string,
-  genre: keyof typeof GENRE_INSTRUCTIONS,
-  slideCount: number,
-  context: string,
-  userSuggestions?: string
-) => `
-You are an expert Content Creator specializing in ${genre}.
-The user wants a video on: "${topic}".
-
-${userSuggestions ? `USER SUGGESTIONS (CRITICAL - PRIORITIZE THIS): \n"${userSuggestions}"\n` : ''}
-
-CONTEXT / RESEARCH:
-${context}
-
-GENRE GUIDELINES (${genre}):
-${GENRE_INSTRUCTIONS[genre]}
-
-GOAL: Create a ${slideCount}-slide video script.
-
-${BASE_VISUAL_RULES}
-
-${BASE_OUTPUT_FORMAT}
-`;
+// ═══════════════════════════════════════════════════════════════
+// WIZARD PRE-STEP PROMPTS
+// Used by step-agents.ts for the wizard's interactive steps
+// (before the main pipeline runs).
+// ═══════════════════════════════════════════════════════════════
 
 export const SLIDE_SPECS_PROMPT = `
 You are an expert Content Strategist.
 Analyze the user's TOPIC and GENRE to determine the optimal number of slides and content strategy.
 
 GUIDELINES:
-- "simple" topics: 4 - 6 slides.
-- "complex" topics: 8 - 12 slides.
-- "story": 6 - 10 slides.
-- "coding": 6 - 10 slides(needs space for code + explanation).
+- "simple" topics: 5–7 slides.
+- "complex" topics: 8–12 slides.
+- "story": 6–10 slides (narrative arc needs room for setup, conflict, resolution).
+- "coding": 7–10 slides (needs space for problem + algorithm + multiple code slides + complexity).
+- "mathematics": 7–10 slides (theorem + derivation + visualization + conclusion).
+- "history": 7–10 slides (context + timeline + key events + legacy).
 
 Output STRICT JSON:
 {
   "recommendedSlideCount": number,
-    "reasoning": "Short explanation of why this count is best.",
-      "contentStrategy": "Brief notes on tone and focus."
+  "reasoning": "Short explanation of why this count is best.",
+  "contentStrategy": "Brief notes on tone, focus, and which visual elements to emphasize."
 }
 `;
 
@@ -366,15 +665,32 @@ export const OUTLINE_PROMPT = (
   userFeedback: string = ""
 ) => `
 You are an expert Outliner for Video Essays.
-  Topic: "${topic}"
+Topic: "${topic}"
 Genre: "${genre}"
 Target Slides: ${slideCount}
 
-${currentOutline.length > 0 ? `CURRENT OUTLINE: \n${JSON.stringify(currentOutline)}` : ''}
+${currentOutline.length > 0 ? `CURRENT OUTLINE:\n${JSON.stringify(currentOutline)}` : ''}
 ${userFeedback ? `USER FEEDBACK (CRITICAL): "${userFeedback}"` : ''}
 
 GOAL: Generate a list of ${slideCount} slide titles that form a cohesive narrative.
-Each title should be short, catchy, and descriptive.
+Each title should be short (3-8 words), catchy, and descriptive.
+
+GENRE-SPECIFIC ORDERING:
+${{
+  history: '- Context/Setting → Timeline → Key Figures → Turning Point → Impact → Legacy',
+  mathematics: '- Concept/Theorem → Problem Setup → Step-by-Step → Visualization → Verification → Applications',
+  science: '- Question/Hypothesis → Mechanism → Evidence/Data → Results → Applications → Conclusion',
+  tech: '- Problem → Solution Overview → Architecture → Implementation → Trade-offs → Best Practices',
+  story: '- Setting → Characters → Inciting Incident → Rising Action → Climax → Resolution',
+  coding: '- Problem Statement → Algorithm → Code Part 1 → Code Part 2 → Complexity → Summary',
+  general: '- Hook → Key Point 1 → Key Point 2 → Key Point 3 → Supporting Data → Takeaways',
+}[genre] || '- Introduction → Main Points → Supporting Details → Conclusion'}
+
+RULES:
+- Slide 1 should be the main topic / hook.
+- Follow the genre's recommended ordering above.
+- The last slide should be a conclusion, summary, or takeaway.
+- If a title contains "Thank You", it renders as a special thank-you slide automatically.
 
 ${userFeedback ? "Modify the current outline to address the user feedback." : "Create a fresh outline."}
 

@@ -5,19 +5,27 @@
  *
  *  START
  *    │
- *  researcher         (decides if web research needed, conditionally searches)
+ *  research_decision  (decides if web research is needed)
  *    │
- *  flow_architect     (refines the narrative outline)
+ *   ┌───── YES ──────┐
+ *   │                 │
+ *  question_agent    (skip)
+ *   │                 │
+ *  research_agent     │
+ *   │                 │
+ *   └─────────────────┘
  *    │
- *  content_generator  (generates slide content)
+ *  flow_agent         (plans content distribution across slides)
  *    │
- *  narration_writer   (writes narration per slide)
+ *  content_agent      (generates raw content per slide)
  *    │
- *  reviewer           (critiques the full draft)
+ *  slide_designer     (picks best visual layout per slide)
  *    │
- *  improver           (applies fixes ─── or skips if no changes needed)
+ *  slide_agent        (generates final slide JSON)
  *    │
- *  merger             (assembles final video script, picks refined or original)
+ *  narration_agent    (writes per-element narration)
+ *    │
+ *  assembler          (packages final production script)
  *    │
  *  END
  */
@@ -36,49 +44,60 @@ export const GRAPH_NODES = [
         kind: 'sentinel' as const,
     },
     {
-        id: 'researcher',
-        label: 'Researcher',
-        sublabel: 'Web search decision',
+        id: 'research_decision',
+        label: 'Research Decision',
+        sublabel: 'Needs web research?',
         color: '#60a5fa',       // blue-400
-        note: 'Conditional: searches only when needed',
+        note: 'Conditional: routes to research or skips',
     },
     {
-        id: 'flow_architect',
-        label: 'Flow Architect',
-        sublabel: 'Refines outline',
+        id: 'question_agent',
+        label: 'Question Agent',
+        sublabel: 'Generates search queries',
+        color: '#38bdf8',       // sky-400
+        note: 'Only runs when research is needed',
+    },
+    {
+        id: 'research_agent',
+        label: 'Research Agent',
+        sublabel: 'Searches the web',
+        color: '#2dd4bf',       // teal-400
+    },
+    {
+        id: 'flow_agent',
+        label: 'Flow Agent',
+        sublabel: 'Plans slide distribution',
         color: '#818cf8',       // indigo-400
     },
     {
-        id: 'content_generator',
-        label: 'Content Generator',
-        sublabel: 'Builds slide content',
+        id: 'content_agent',
+        label: 'Content Agent',
+        sublabel: 'Generates slide content',
         color: '#c084fc',       // purple-400
     },
     {
-        id: 'narration_writer',
-        label: 'Narration Writer',
-        sublabel: 'Writes slide narration',
+        id: 'slide_designer',
+        label: 'Slide Designer',
+        sublabel: 'Picks visual layouts',
         color: '#f472b6',       // pink-400
     },
     {
-        id: 'reviewer',
-        label: 'Reviewer',
-        sublabel: 'Critiques draft script',
+        id: 'slide_agent',
+        label: 'Slide Agent',
+        sublabel: 'Structures final JSON',
+        color: '#fb923c',       // orange-400
+    },
+    {
+        id: 'narration_agent',
+        label: 'Narration Agent',
+        sublabel: 'Per-element voiceover',
         color: '#34d399',       // emerald-400
     },
     {
-        id: 'improver',
-        label: 'Improver',
-        sublabel: 'Applies reviewer fixes',
-        color: '#fb923c',       // orange-400
-        note: 'Internal bypass: skips LLM if no changes needed',
-    },
-    {
-        id: 'merger',
-        label: 'Merger',
-        sublabel: 'Assembles final script',
+        id: 'assembler',
+        label: 'Assembler',
+        sublabel: 'Packages final script',
         color: '#22d3ee',       // cyan-400
-        note: 'Uses refinedScript if improver ran, else combines manually',
     },
     {
         id: '__end__',
@@ -88,25 +107,29 @@ export const GRAPH_NODES = [
     },
 ];
 
-/** Edges — mirrors addEdge() / setEntryPoint() in wizard-graph.ts */
+/** Edges — mirrors addEdge() / addConditionalEdges() in wizard-graph.ts */
 export const GRAPH_EDGES: { from: string; to: string; label?: string; dashed?: boolean }[] = [
-    { from: '__start__', to: 'researcher' },
-    { from: 'researcher', to: 'flow_architect' },
-    { from: 'flow_architect', to: 'content_generator' },
-    { from: 'content_generator', to: 'narration_writer' },
-    { from: 'narration_writer', to: 'reviewer' },
-    { from: 'reviewer', to: 'improver' },
-    // The improver always runs, but internally may skip its LLM call:
-    { from: 'improver', to: 'merger', label: 'always' },
-    { from: 'merger', to: '__end__' },
+    { from: '__start__', to: 'research_decision' },
+    // Conditional branch: research needed → question_agent; else → flow_agent
+    { from: 'research_decision', to: 'question_agent', label: 'yes', dashed: true },
+    { from: 'research_decision', to: 'flow_agent', label: 'no', dashed: true },
+    { from: 'question_agent', to: 'research_agent' },
+    { from: 'research_agent', to: 'flow_agent' },
+    // Main pipeline
+    { from: 'flow_agent', to: 'content_agent' },
+    { from: 'content_agent', to: 'slide_designer' },
+    { from: 'slide_designer', to: 'slide_agent' },
+    { from: 'slide_agent', to: 'narration_agent' },
+    { from: 'narration_agent', to: 'assembler' },
+    { from: 'assembler', to: '__end__' },
 ];
 
 // ─── Layout ──────────────────────────────────────────────────────────────────
 
 const NODE_W = 180;
-const NODE_H = 44;
+const NODE_H = 40;
 const SENT_R = 14;     // sentinel (circle) radius
-const VSTEP = 78;     // vertical gap between node centres
+const VSTEP = 64;     // vertical gap between node centres
 const CX = 130;    // horizontal centre of the SVG
 const SVG_W = 260;
 
@@ -141,7 +164,7 @@ export function AgentFlowGraph({
     const isSentinel = (id: string) => SENTINELS.includes(id);
 
     return (
-        <div className="w-full h-[320px] max-h-[400px] flex flex-col items-center overflow-y-auto overflow-x-hidden custom-scrollbar pr-2">
+        <div className="w-full h-[460px] max-h-[560px] flex flex-col items-center overflow-y-auto overflow-x-hidden custom-scrollbar pr-2">
             {/* Legend */}
             <div className="flex items-center gap-3 mb-2 text-[9px] font-mono text-slate-600 uppercase tracking-widest">
                 <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-slate-700 border border-slate-600" /> Pending</span>
