@@ -82,6 +82,13 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
             heading: 'Georgia, serif',
             body: '"Trebuchet MS", sans-serif',
         },
+        textSizes: {
+            h1: 64,
+            h2: 48,
+            h3: 32,
+            body: 24,
+            mono: 20
+        },
         shapes: {
             radius: '16px',
         },
@@ -103,6 +110,13 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
         fonts: {
             heading: '"Space Grotesk", sans-serif',
             body: '"Roboto Mono", monospace',
+        },
+        textSizes: {
+            h1: 64,
+            h2: 48,
+            h3: 32,
+            body: 24,
+            mono: 20
         },
         shapes: {
             radius: '2px', // Sharp edges
@@ -129,6 +143,13 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
             heading: '"Inter", sans-serif',
             body: '"Inter", sans-serif',
             mono: '"Fira Code", monospace'
+        },
+        textSizes: {
+            h1: 64,
+            h2: 48,
+            h3: 32,
+            body: 24,
+            mono: 20
         },
         shapes: {
             radius: '10px',

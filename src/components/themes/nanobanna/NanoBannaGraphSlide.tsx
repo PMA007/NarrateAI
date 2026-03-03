@@ -114,7 +114,7 @@ export const NanoBannaGraphSlide: React.FC<SlideComponentProps> = ({
                                 textAnchor="middle"
                                 fill={theme.colors.text.secondary}
                                 fontFamily={theme.fonts.body}
-                                fontSize={theme.textSizes?.caption || 16}
+                                fontSize={theme.textSizes?.body || 16}
                             >
                                 {labels[i]}
                             </text>

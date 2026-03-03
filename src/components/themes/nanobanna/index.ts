@@ -30,6 +30,13 @@ export const nanobannaTheme: ThemeConfig = {
         body: "'Inter', sans-serif",
         mono: "'Fira Code', monospace"
     },
+    textSizes: {
+        h1: 64,
+        h2: 48,
+        h3: 32,
+        body: 24,
+        mono: 20
+    },
     shapes: {
         radius: '10px',
     }

@@ -2,7 +2,7 @@
 
 import { Stage } from '@/components/canvas/Stage';
 import { useStore } from '@/lib/store';
-import { FONT_OPTIONS } from '@/lib/fonts'; // Import fonts
+import { FONT_OPTIONS, type FontKey } from '@/lib/fonts'; // Import fonts
 import { SlideList } from '@/components/studio/SlideList';
 import { AnimationPanel } from '@/components/studio/AnimationPanel';
 import { Play, Pause, Download, RotateCcw, Home as HomeIcon, Loader2, Settings, Sparkles } from 'lucide-react';
@@ -332,7 +332,7 @@ function StudioContent() {
                     <select
                         className="bg-neutral-900 border border-neutral-700 text-neutral-300 text-sm max-w-[10rem] truncate rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-cyan-500"
                         value={selectedFont || 'Modern'}
-                        onChange={(e) => setFont(e.target.value)}
+                        onChange={(e) => setFont(e.target.value as FontKey)}
                         title="Font Family"
                     >
                         {Object.entries(FONT_OPTIONS).map(([key, font]) => (

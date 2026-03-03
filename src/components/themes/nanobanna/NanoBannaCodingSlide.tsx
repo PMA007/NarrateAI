@@ -60,7 +60,7 @@ export const NanoBannaCodingSlide: React.FC<SlideComponentProps> = ({
                             code={code_snippet || '// No code provided'}
                             highlightLines={highlight_lines || []}
                             theme="dark"
-                            fontSize={theme.textSizes?.code || 18}
+                            fontSize={theme.textSizes?.mono || 18}
                         />
                     </div>
                 </foreignObject>
