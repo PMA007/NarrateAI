@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
 
-        const { script, voice, provider, narrationLanguage, font, width, height, fps } = body;
+        const { script, voice, provider, narrationLanguage, font, width, height, fps, renderMode } = body;
 
         if (!script || !script.slides || !Array.isArray(script.slides)) {
             return NextResponse.json(
@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
             width: width ?? 1280,
             height: height ?? 720,
             fps: fps ?? 30,
+            renderMode: renderMode ?? 'puppeteer',
         };
 
         const jobId = createJob(params);

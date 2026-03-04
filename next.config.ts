@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     'puppeteer',
     'puppeteer-core',
+    '@sparticuz/chromium',
     'fluent-ffmpeg',
     '@ffmpeg-installer/ffmpeg'
   ],

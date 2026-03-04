@@ -124,19 +124,19 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
     },
     'nanobanna': {
         colors: {
-            primary: '#FFD700',      // Banana Yellow
-            secondary: '#FFFFFF',    // White
-            background: '#0F0F11',   // Deep Black
-            surface: '#1E1E23',      // Dark Grey Surface
-            grid: 'rgba(255, 255, 255, 0.05)',
+            primary: '#A78BFA',      // Aurora Violet
+            secondary: '#34D399',    // Aurora Emerald
+            background: '#06060F',   // Deep Black
+            surface: '#0F0F1E',      // Dark Surface
+            grid: 'rgba(167, 139, 250, 0.06)',
             text: {
-                primary: '#FFFFFF',
-                secondary: '#CCCCCC',
-                accent: '#FFD700'
+                primary: '#F1F5F9',
+                secondary: '#94A3B8',
+                accent: '#A78BFA'
             },
             card: {
-                background: '#1E1E23',
-                border: '#333333',
+                background: '#13132A',
+                border: 'rgba(167, 139, 250, 0.2)',
             },
         },
         fonts: {
@@ -145,14 +145,14 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
             mono: '"Fira Code", monospace'
         },
         textSizes: {
-            h1: 64,
-            h2: 48,
-            h3: 32,
-            body: 24,
-            mono: 20
+            h1: 78,
+            h2: 56,
+            h3: 40,
+            body: 28,
+            mono: 22
         },
         shapes: {
-            radius: '10px',
+            radius: '12px',
         },
     },
 };

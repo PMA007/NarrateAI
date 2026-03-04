@@ -54,6 +54,12 @@ export interface RenderParams {
     width?: number;
     height?: number;
     fps?: number;
+    /**
+     * Render pipeline to use:
+     *  - 'puppeteer'  — headless Chromium screenshots (default, full animations)
+     *  - 'ssr-static' — server-side node-canvas, one static frame per slide, no animations
+     */
+    renderMode?: 'puppeteer' | 'ssr-static';
 }
 
 // ─── State ─────────────────────────────────────────────────────────────────

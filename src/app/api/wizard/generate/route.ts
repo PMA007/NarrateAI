@@ -37,8 +37,23 @@ export async function POST(req: NextRequest) {
         const writer = stream.writable.getWriter();
         const encoder = new TextEncoder();
 
-        const send = (payload: object) =>
-            writer.write(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        // Track whether the client is still connected
+        let aborted = false;
+        req.signal.addEventListener('abort', () => {
+            aborted = true;
+            console.log("⚠️ Client disconnected — aborting stream.");
+            writer.close().catch(() => {});
+        });
+
+        const send = async (payload: object) => {
+            if (aborted) return;
+            try {
+                await writer.write(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+            } catch {
+                // Client disconnected mid-write — mark aborted
+                aborted = true;
+            }
+        };
 
         // Start generation in background
         (async () => {
@@ -166,12 +181,14 @@ export async function POST(req: NextRequest) {
                     }
                 }
 
-                await writer.close();
+                if (!aborted) await writer.close().catch(() => {});
 
             } catch (e: any) {
                 console.error("Stream Error", e);
-                await send({ type: 'error', message: e.toString() });
-                await writer.close();
+                if (!aborted) {
+                    await send({ type: 'error', message: e.toString() });
+                    await writer.close().catch(() => {});
+                }
             }
         })();
 

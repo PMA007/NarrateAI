@@ -455,3 +455,205 @@ function muxVideoWithFramePipe(
         cmd.run();
     });
 }
+
+// ================================================================
+// SSR STATIC RENDERER — one frame per slide, no animations
+// ================================================================
+
+/**
+ * Ultra-fast server-side rendering pipeline.
+ *
+ * Instead of rendering every single frame (30fps × duration ≈ hundreds of
+ * frames per slide), we draw ONE static frame per slide at localTime=0
+ * (fully settled, no entrance animations), save it as a PNG, then use
+ * FFmpeg's concat demuxer to hold each image for its exact audio duration.
+ *
+ * Speed comparison (5 slides × 5 s average × 30 fps):
+ *   Puppeteer mode  : ~750 screenshot + encode cycles
+ *   SSR static mode :   5 canvas draws  → 100×+ faster total render time
+ */
+export async function renderVideoSSRStatic(job: RenderJob): Promise<void> {
+    const { params } = job;
+    const width = params.width ?? 1280;
+    const height = params.height ?? 720;
+    const fps = params.fps ?? 30;
+    const slides = params.script.slides;
+    const template = (params.script.template ?? 'neon') as 'neon' | 'retro';
+
+    const tmpDir = getJobTempDir(job.id);
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+    const outputsDir = path.join(process.cwd(), 'outputs');
+    if (!fs.existsSync(outputsDir)) fs.mkdirSync(outputsDir, { recursive: true });
+    const outputPath = path.join(outputsDir, `video-${job.id.slice(0, 8)}.mp4`);
+
+    // ── Phase 1: Audio Generation (identical to renderVideo) ─────────────
+    job.status = 'audio';
+    job.message = 'Generating audio...';
+    job.progress = 0;
+
+    const audioPaths: string[] = [];
+    const durations: number[] = [];
+    const rawExt = params.provider === 'sarvam' ? '.wav' : '.mp3';
+
+    for (let i = 0; i < slides.length; i++) {
+        const slide = slides[i];
+        const text = slide.narration || slide.title;
+        const rawPath = path.join(tmpDir, `slide-${i}-raw${rawExt}`);
+        const normPath = path.join(tmpDir, `slide-${i}-norm.wav`);
+
+        job.message = `Generating audio (${i + 1}/${slides.length})...`;
+        job.progress = Math.round((i / slides.length) * 25);
+
+        try {
+            const buffer = await generateSpeech(
+                text, params.voice, params.provider, 'default',
+                params.narrationLanguage ?? 'te-IN'
+            );
+            fs.writeFileSync(rawPath, buffer);
+            await normaliseAudio(rawPath, normPath);
+            const exactDuration = await getAudioDurationSeconds(normPath);
+            try { fs.unlinkSync(rawPath); } catch { /* ignore */ }
+            audioPaths.push(normPath);
+            durations.push(exactDuration);
+        } catch (err) {
+            console.warn(`[SSR-Static ${job.id}] TTS failed for slide ${i + 1}:`, (err as Error).message);
+            [rawPath, normPath].forEach(p => { try { fs.unlinkSync(p); } catch { /* ignore */ } });
+            audioPaths.push('');
+            durations.push(slide.duration ?? 5);
+        }
+    }
+
+    // ── Phase 2: Mix combined audio track ────────────────────────────────
+    job.status = 'audio';
+    job.message = 'Mixing audio tracks...';
+    job.progress = 28;
+
+    const combinedAudioPath = path.join(tmpDir, 'combined_audio.wav');
+    try {
+        await buildCombinedAudio(audioPaths, durations, combinedAudioPath);
+    } catch (audioMixErr) {
+        console.error(`[SSR-Static ${job.id}] Audio concat failed:`, audioMixErr);
+    }
+
+    // ── Phase 3: Draw ONE static frame per slide ──────────────────────────
+    job.status = 'rendering';
+    job.message = 'Drawing static frames...';
+    job.progress = 30;
+
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    const framePaths: string[] = [];
+
+    for (let i = 0; i < slides.length; i++) {
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw background — localTime=0 gives the fully-settled state (no animations)
+        if (template === 'retro') {
+            drawRetroBackground(ctx as unknown as CanvasRenderingContext2D, width, height);
+        } else {
+            // neon / brutalist / nanobanna all fall back to the neon canvas background
+            drawNeonBackground(ctx as unknown as CanvasRenderingContext2D, width, height, 0);
+        }
+
+        // Draw slide content at localTime=0 (all elements fully visible, no entrance delay)
+        drawSlideContent(
+            ctx as unknown as CanvasRenderingContext2D,
+            slides[i] as any,
+            params.font,
+            width,
+            height,
+            999, // large value → all entrance animations are fully eased in
+            template
+        );
+
+        const framePath = path.join(tmpDir, `frame-${i}.png`);
+        const pngBuffer = (canvas as unknown as { toBuffer(mime: string): Buffer }).toBuffer('image/png');
+        fs.writeFileSync(framePath, pngBuffer);
+        framePaths.push(framePath);
+
+        job.progress = 30 + Math.round(((i + 1) / slides.length) * 35);
+        job.message = `Drawing slide ${i + 1}/${slides.length}...`;
+        console.log(`[SSR-Static ${job.id}] Drew frame ${i + 1}/${slides.length}`);
+    }
+
+    // ── Phase 4: Build FFmpeg concat manifest ─────────────────────────────
+    // Format required by the FFmpeg concat demuxer:
+    //   file '/abs/path/frame-0.png'
+    //   duration 5.234000
+    //   ...
+    //   file '/abs/path/frame-N.png'   ← last file repeated (no duration) to
+    //   file '/abs/path/frame-N.png'     flush the final frame properly
+    let concatContent = '';
+    for (let i = 0; i < framePaths.length; i++) {
+        const safePath = framePaths[i].replace(/\\/g, '/');
+        concatContent += `file '${safePath}'\n`;
+        concatContent += `duration ${durations[i].toFixed(6)}\n`;
+    }
+    // Duplicate the final frame entry (required by concat demuxer to avoid
+    // the last frame being trimmed when -shortest is used with audio).
+    const lastSafe = framePaths[framePaths.length - 1].replace(/\\/g, '/');
+    concatContent += `file '${lastSafe}'\n`;
+
+    const concatFilePath = path.join(tmpDir, 'concat.txt');
+    fs.writeFileSync(concatFilePath, concatContent, 'utf8');
+
+    // ── Phase 5: FFmpeg — concat demuxer → H.264 + AAC ───────────────────
+    job.message = 'Encoding video with FFmpeg...';
+    job.progress = 68;
+
+    const hasAudio = fs.existsSync(combinedAudioPath);
+
+    await new Promise<void>((resolve, reject) => {
+        let cmd = Ffmpeg()
+            .input(concatFilePath)
+            .inputOptions(['-f', 'concat', '-safe', '0']);
+
+        if (hasAudio) {
+            cmd = cmd
+                .input(combinedAudioPath)
+                .inputOptions(['-thread_queue_size', '512']);
+        }
+
+        const outOpts = [
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',   // fastest encode — size tradeoff acceptable for static slides
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-r', String(fps),
+            '-movflags', '+faststart',
+            '-map', '0:v',
+        ];
+
+        if (hasAudio) {
+            outOpts.push('-map', '1:a', '-c:a', 'aac', '-b:a', '128k', '-shortest');
+        }
+
+        cmd
+            .outputOptions(outOpts)
+            .output(outputPath)
+            .on('progress', (p: { percent?: number }) => {
+                const pct = p.percent ?? 0;
+                job.progress = 68 + Math.round(pct * 0.29); // 68→97
+                job.message = `Encoding… ${Math.round(pct)}%`;
+            })
+            .on('end', () => resolve())
+            .on('error', (err: Error) => reject(new Error(`FFmpeg concat error: ${err.message}`)))
+            .run();
+    });
+
+    // ── Cleanup ────────────────────────────────────────────────────────────
+    const silenceFiles = slides.map((_, i) => path.join(tmpDir, `silence-${i}.wav`));
+    [...audioPaths, combinedAudioPath, ...silenceFiles, ...framePaths, concatFilePath].forEach(p => {
+        if (p && fs.existsSync(p)) {
+            try { fs.unlinkSync(p); } catch { /* ignore */ }
+        }
+    });
+    try { fs.rmdirSync(tmpDir); } catch { /* may not be empty */ }
+
+    job.outputPath = outputPath;
+    job.status = 'complete';
+    job.progress = 100;
+    job.message = 'Video ready for download.';
+    console.log(`[SSR-Static ${job.id}] ✅ Complete → ${outputPath}`);
+}

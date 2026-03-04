@@ -13,59 +13,12 @@
  *   8. Narration Agent — generates per-element narration for each slide
  */
 
-// ═══════════════════════════════════════════════════════════════
-// THEME LAYOUT SUPPORT MAP
-// ═══════════════════════════════════════════════════════════════
-
-const THEME_LAYOUT_SUPPORT: Record<string, { supported: string[]; partial: string[]; avoid: string[] }> = {
-  nanobanna: {
-    supported: ['title', 'text_features', 'columns_3', 'grid_cards', 'comparison', 'process_flow', 'chart_bar', 'table', 'coding', 'network'],
-    partial: ['chart_line'],
-    avoid: [],
-  },
-  neon: {
-    supported: ['title', 'text_features', 'columns_3', 'grid_cards', 'comparison', 'process_flow', 'chart_bar', 'chart_line'],
-    partial: [],
-    avoid: ['table', 'coding', 'network'],
-  },
-  retro: {
-    supported: ['title', 'text_features', 'process_flow', 'chart_bar'],
-    partial: ['grid_cards'],
-    avoid: ['columns_3', 'comparison', 'table', 'coding', 'network', 'chart_line'],
-  },
-  brutalist: {
-    supported: ['title', 'text_features', 'process_flow', 'chart_bar', 'table'],
-    partial: [],
-    avoid: ['columns_3', 'grid_cards', 'comparison', 'coding', 'network', 'chart_line'],
-  },
-};
-
 /**
- * Build a template-aware advisory block for the Slide Designer agent.
+ * Template advisory — retained for API compatibility.
+ * All templates now support all 11 layouts, so no restrictions are emitted.
  */
-export function getTemplateAdvisory(template: string): string {
-  const t = THEME_LAYOUT_SUPPORT[template];
-  if (!t) return '';
-
-  const lines: string[] = [
-    `\n## TEMPLATE LAYOUT ADVISORY (template: "${template}")`,
-    `PREFERRED layouts (render perfectly): ${t.supported.join(', ')}`,
-  ];
-  if (t.partial.length) {
-    lines.push(`PARTIAL support (may use fallback rendering): ${t.partial.join(', ')}`);
-  }
-  if (t.avoid.length) {
-    lines.push(`AVOID these layouts — they WILL NOT render correctly on this template: ${t.avoid.join(', ')}`);
-    lines.push(`Conversion rules for avoided layouts:`);
-    if (t.avoid.includes('table'))      lines.push(`  - Instead of "table" → use "text_features" with bullet-formatted rows`);
-    if (t.avoid.includes('coding'))     lines.push(`  - Instead of "coding" → use "text_features" with bullets describing the code`);
-    if (t.avoid.includes('network'))    lines.push(`  - Instead of "network" → use "process_flow" to show relationships`);
-    if (t.avoid.includes('comparison')) lines.push(`  - Instead of "comparison" → use "text_features" with Side A / Side B labeled bullets`);
-    if (t.avoid.includes('columns_3')) lines.push(`  - Instead of "columns_3" → use "text_features" with 3 bullets`);
-    if (t.avoid.includes('grid_cards')) lines.push(`  - Instead of "grid_cards" → use "text_features" with 4 bullets`);
-    if (t.avoid.includes('chart_line')) lines.push(`  - Instead of "chart_line" → use "chart_bar" (same data shape)`);
-  }
-  return lines.join('\n');
+export function getTemplateAdvisory(_template: string): string {
+  return '';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -217,24 +170,33 @@ You are a Research Decision Agent.
 Topic: "${topic}"
 Genre: "${genre}"
 
-Your job: Decide whether this topic requires external web research to produce an accurate, high-quality video.
+Your job: Decide whether this topic requires external web research to ensure the content is **factually accurate, complete, and up-to-date**. Research means querying the web for real data — it costs time and API calls, so only request it when your built-in knowledge is likely insufficient or outdated for this specific topic.
 
 RESEARCH NEEDED when:
-- Topic involves recent events, current statistics, or rapidly changing information
-- Topic requires specific factual data (dates, numbers, names, scientific findings)
-- Topic is about a real person, company, technology, or historical event
-- Genre is "history", "science", or "tech" with specific factual claims needed
+- Topic involves recent events (past 1–2 years), current statistics, or rapidly evolving information
+- Topic mentions specific years, versions, or dates close to the present (e.g., "2024", "2025", "latest")
+- Topic requires precise factual data (statistics, dates, names, scientific measurements) where inaccuracy would be noticeable
+- Topic is about a real person, company, product, or historical event with verifiable claims
+- Genre is "history", "science", or "tech" AND the topic makes specific factual claims that need verification
+- Topic involves comparisons, benchmarks, or rankings that change over time (e.g., "best frameworks in 2025", "country GDP rankings")
 
 RESEARCH NOT NEEDED when:
-- Topic is creative/fictional (stories, myths, motivational content)
-- Topic is about well-known general concepts that any educated person knows
-- Topic is about abstract/philosophical ideas
-- Genre is "story" or purely conceptual "general" topics
-- Topic is about coding concepts/algorithms (these are well-established knowledge)
+- Topic is creative, fictional, or motivational (stories, myths, thought experiments)
+- Topic covers well-established general knowledge that does not change (e.g., "What is photosynthesis", "How gravity works")
+- Topic is about abstract, philosophical, or opinion-based ideas
+- Genre is "story" or a purely conceptual "general" topic with no factual claims to verify
+- Topic is about established coding concepts or algorithms (e.g., "Binary Search", "How recursion works") — BUT if the topic references a specific library version, recent release, or benchmark, research IS needed
+- Topic is broad and introductory (e.g., "Introduction to Machine Learning") where general knowledge suffices
+
+ASK YOURSELF:
+1. "If I generate content from memory alone, is there a meaningful risk of stating outdated or incorrect facts?" → YES = research needed.
+2. "Does this topic require specific numbers, dates, or names that I might hallucinate?" → YES = research needed.
+3. "Is this topic stable knowledge that hasn't changed in years?" → YES = skip research.
 
 Output STRICT JSON:
 {
   "needs_research": true | false,
+  "confidence": "high" | "medium" | "low",
   "reason": "One sentence explaining your decision"
 }
 `;
@@ -250,7 +212,7 @@ You are a Research Question Agent.
 Topic: "${topic}"
 Genre: "${genre}"
 
-Your job: Generate 3–5 highly targeted search queries that the Research Agent will use to find the most relevant and accurate information for creating a video about this topic.
+Your job: Generate 3-5 highly targeted search queries that the Research Agent will use to find the most relevant and accurate information for creating a video about this topic.
 
 QUERY DESIGN RULES:
 - Each query should target a DIFFERENT aspect of the topic.
@@ -459,7 +421,7 @@ DECISION FRAMEWORK:
    - Has node/edge relationships → "network"
 3. NEVER use the same layout 3+ times in a row.
 4. Ensure at least 3-4 DIFFERENT layout types across the deck.
-5. Check the TEMPLATE ADVISORY above — avoid layouts not supported by the template.
+5. ALL 11 layouts are available on every template — choose purely based on content fit.
 
 LAYOUT SELECTION RULES:
 - If data.type === "chart" → use "chart_bar" or "chart_line" based on whether the data is categorical (bar) or time-series (line)

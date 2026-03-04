@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
-import { Loader2, Download, AlertCircle, CheckCircle2, ArrowLeft, Info, Monitor, Cloud, Clock } from 'lucide-react';
+import { Loader2, Download, AlertCircle, CheckCircle2, ArrowLeft, Info, Monitor, Cloud, Clock, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { ComponentRenderer, RenderState } from '@/lib/component-renderer';
 import { detectPlatform, PlatformInfo } from '@/lib/universal-renderer';
@@ -11,7 +11,7 @@ import { FONT_OPTIONS, FontKey } from '@/lib/fonts';
 import { SlideRenderer } from '@/components/canvas/SlideRenderer';
 import dynamic from 'next/dynamic';
 
-type RenderMode = 'choose' | 'local' | 'server';
+type RenderMode = 'choose' | 'local' | 'server' | 'ssr-static';
 
 type ServerJobStatus = 'queued' | 'audio' | 'rendering' | 'complete' | 'error';
 
@@ -269,10 +269,10 @@ export default function RenderPage() {
         }
     };
 
-    // ── Server-side render: start job ─────────────────────────────────────────
-    const startServerRender = async () => {
+    // ── Server-side render: start job (shared logic) ──────────────────────────
+    const startServerRenderWithMode = async (mode: 'puppeteer' | 'ssr-static') => {
         if (!script) return;
-        setRenderMode('server');
+        setRenderMode(mode === 'ssr-static' ? 'ssr-static' : 'server');
         setServerJob(prev => ({ ...prev, status: 'queued', message: 'Submitting job to server...', progress: 0 }));
 
         try {
@@ -288,6 +288,7 @@ export default function RenderPage() {
                     width: 1280,
                     height: 720,
                     fps: 30,
+                    renderMode: mode,
                 }),
             });
 
@@ -447,7 +448,7 @@ export default function RenderPage() {
                             <p className="text-neutral-400 mt-2 text-sm">Choose how you want to render your presentation</p>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             {/* Local option */}
                             <button
                                 onClick={() => {
@@ -463,15 +464,15 @@ export default function RenderPage() {
                                     <span className="font-semibold text-white">Local Rendering</span>
                                 </div>
                                 <p className="text-sm text-neutral-400">Renders in your browser using WebCodecs. Fast for short videos. Requires Chrome or Edge 94+.</p>
-                                <div className="flex gap-2 mt-1">
+                                <div className="flex gap-2 mt-1 flex-wrap">
                                     <span className="text-xs bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full px-2 py-0.5">WebCodecs</span>
                                     <span className="text-xs bg-neutral-800 text-neutral-400 border border-neutral-700 rounded-full px-2 py-0.5">Chrome/Edge only</span>
                                 </div>
                             </button>
 
-                            {/* Server option */}
+                            {/* Server option — Puppeteer full-animation */}
                             <button
-                                onClick={startServerRender}
+                                onClick={() => startServerRenderWithMode('puppeteer')}
                                 className="group relative flex flex-col gap-4 p-6 rounded-2xl border border-neutral-700 bg-neutral-900/60 hover:border-violet-500/60 hover:bg-neutral-800/80 transition-all duration-200 text-left"
                             >
                                 <div className="flex items-center gap-3">
@@ -480,24 +481,49 @@ export default function RenderPage() {
                                     </div>
                                     <span className="font-semibold text-white">Server Rendering</span>
                                 </div>
-                                <p className="text-sm text-neutral-400">Rendered on our server using FFmpeg. Works on any browser or device. No GPU required.</p>
-                                <div className="flex gap-2 mt-1">
-                                    <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-full px-2 py-0.5">FFmpeg</span>
+                                <p className="text-sm text-neutral-400">Full animations via headless Chromium. Best quality, slower for long presentations.</p>
+                                <div className="flex gap-2 mt-1 flex-wrap">
+                                    <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-full px-2 py-0.5">Puppeteer</span>
                                     <span className="text-xs bg-neutral-800 text-neutral-400 border border-neutral-700 rounded-full px-2 py-0.5">Any browser</span>
+                                </div>
+                            </button>
+
+                            {/* SSR Static option — node-canvas, no animations */}
+                            <button
+                                onClick={() => startServerRenderWithMode('ssr-static')}
+                                className="group relative flex flex-col gap-4 p-6 rounded-2xl border border-neutral-700 bg-neutral-900/60 hover:border-emerald-500/60 hover:bg-neutral-800/80 transition-all duration-200 text-left"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                                        <Zap className="w-5 h-5 text-emerald-400" />
+                                    </div>
+                                    <span className="font-semibold text-white">Fast SSR</span>
+                                    <span className="ml-auto text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full px-2 py-0.5">NEW</span>
+                                </div>
+                                <p className="text-sm text-neutral-400">Server-side rendering with no animations. One frame per slide — drastically faster.</p>
+                                <div className="flex gap-2 mt-1 flex-wrap">
+                                    <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full px-2 py-0.5">node-canvas</span>
+                                    <span className="text-xs bg-neutral-800 text-neutral-400 border border-neutral-700 rounded-full px-2 py-0.5">~100× faster</span>
                                 </div>
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* ── SERVER RENDER UI ─────────────────────────────────────── */}
-                {renderMode === 'server' && (
+                {/* ── SERVER / SSR-STATIC RENDER UI ─────────────────────────── */}
+                {(renderMode === 'server' || renderMode === 'ssr-static') && (
                     <div className="space-y-8">
                         <div className="flex items-center gap-3">
-                            <Cloud className="w-5 h-5 text-violet-400" />
-                            <h2 className="font-semibold text-white">Server Rendering</h2>
+                            {renderMode === 'ssr-static'
+                                ? <Zap className="w-5 h-5 text-emerald-400" />
+                                : <Cloud className="w-5 h-5 text-violet-400" />}
+                            <h2 className="font-semibold text-white">
+                                {renderMode === 'ssr-static' ? 'Fast SSR (No Animations)' : 'Server Rendering'}
+                            </h2>
                             {serverJob.status !== 'complete' && serverJob.status !== 'error' && (
-                                <Loader2 className="w-4 h-4 text-violet-400 animate-spin ml-auto" />
+                                <Loader2 className={`w-4 h-4 animate-spin ml-auto ${
+                                    renderMode === 'ssr-static' ? 'text-emerald-400' : 'text-violet-400'
+                                }`} />
                             )}
                         </div>
 
@@ -515,7 +541,9 @@ export default function RenderPage() {
                             <div className={`space-y-2 transition-opacity ${serverJob.status === 'audio' ? 'opacity-100' : serverJob.status === 'queued' ? 'opacity-40' : 'opacity-60'}`}>
                                 <div className="flex justify-between items-center text-sm font-medium">
                                     <span className="flex items-center gap-2">
-                                        {serverJob.status === 'audio' && <Loader2 className="w-4 h-4 animate-spin text-violet-400" />}
+                                        {serverJob.status === 'audio' && <Loader2 className={`w-4 h-4 animate-spin ${
+                                            renderMode === 'ssr-static' ? 'text-emerald-400' : 'text-violet-400'
+                                        }`} />}
                                         {(serverJob.status === 'rendering' || serverJob.status === 'complete') && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                                         🎙️ Generating Audio
                                     </span>
@@ -526,7 +554,9 @@ export default function RenderPage() {
                                 </div>
                                 <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
                                     <div
-                                        className="h-full bg-violet-500 transition-all duration-500 ease-out rounded-full"
+                                        className={`h-full transition-all duration-500 ease-out rounded-full ${
+                                            renderMode === 'ssr-static' ? 'bg-emerald-500' : 'bg-violet-500'
+                                        }`}
                                         style={{
                                             width: `${serverJob.status === 'audio' ? serverJob.progress :
                                                 (serverJob.status === 'rendering' || serverJob.status === 'complete') ? 100 : 0
@@ -551,7 +581,9 @@ export default function RenderPage() {
                                 </div>
                                 <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
                                     <div
-                                        className="h-full bg-blue-500 transition-all duration-500 ease-out rounded-full"
+                                        className={`h-full transition-all duration-500 ease-out rounded-full ${
+                                            renderMode === 'ssr-static' ? 'bg-teal-500' : 'bg-blue-500'
+                                        }`}
                                         style={{
                                             width: `${serverJob.status === 'rendering' ? serverJob.progress :
                                                 serverJob.status === 'complete' ? 100 : 0
@@ -585,14 +617,23 @@ export default function RenderPage() {
                                 <a
                                     href={`/api/render/download?jobId=${serverJob.jobId}`}
                                     download
-                                    className="w-full bg-gradient-to-r from-violet-500 to-blue-600 text-white font-semibold py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-violet-500/20"
+                                    className={`w-full text-white font-semibold py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg bg-gradient-to-r ${
+                                        renderMode === 'ssr-static'
+                                            ? 'from-emerald-500 to-teal-600 shadow-emerald-500/20'
+                                            : 'from-violet-500 to-blue-600 shadow-violet-500/20'
+                                    }`}
                                 >
                                     <Download className="w-5 h-5" />
                                     Download Video (MP4)
                                 </a>
                                 <div className="p-4 bg-neutral-900/50 border border-neutral-800 rounded-xl text-sm text-neutral-400 flex items-start gap-3">
-                                    <Info className="w-4 h-4 flex-shrink-0 text-violet-400 mt-0.5" />
-                                    <p>This link is valid for 30 minutes. The file will be automatically deleted from the server after download.</p>
+                                    <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${renderMode === 'ssr-static' ? 'text-emerald-400' : 'text-violet-400'}`} />
+                                    <p>
+                                        {renderMode === 'ssr-static'
+                                            ? 'Rendered without animations (one static frame per slide). Link valid for 30 minutes.'
+                                            : 'This link is valid for 30 minutes. The file will be automatically deleted from the server after download.'
+                                        }
+                                    </p>
                                 </div>
                                 <button
                                     onClick={() => setRenderMode('choose')}

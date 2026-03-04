@@ -16,11 +16,30 @@
  *   6. Mux combined WAV + video frames → MP4
  */
 
-const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
+
+// ── Puppeteer / Chromium — environment-aware ───────────────────────────────────
+// On Vercel (or any serverless env), use puppeteer-core + @sparticuz/chromium.
+// Locally, use full puppeteer which bundles its own Chromium.
+const IS_VERCEL = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+let puppeteer;
+let chromiumArgs;
+let executablePath;
+
+if (IS_VERCEL) {
+    puppeteer = require('puppeteer-core');
+    const chromium = require('@sparticuz/chromium');
+    chromiumArgs = chromium.args;
+    executablePath = chromium.executablePath();
+} else {
+    puppeteer = require('puppeteer');
+    chromiumArgs = null;
+    executablePath = null;
+}
+
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
 
@@ -227,24 +246,44 @@ async function main() {
     const combinedAudioPath = path.join(tmpDir, 'combined-audio.wav');
     await buildCombinedAudio(normAudioPaths, slideDurations, combinedAudioPath);
 
+    // ── SSR Static Branch ─────────────────────────────────────────────────────
+    // When renderMode === 'ssr-static', skip Puppeteer entirely.
+    // Draw one static PNG per slide with node-canvas, then stitch them with the
+    // FFmpeg concat demuxer.  Much faster: O(slides) draws instead of O(slides×fps×dur).
+    if (params.renderMode === 'ssr-static') {
+        await renderSSRStatic({
+            params, slides, width, height, fps,
+            slideDurations, combinedAudioPath, tmpDir, outputPath,
+        });
+        process.exit(0);
+    }
+
     writeStatus({ status: 'rendering', progress: 25, message: 'Launching headless Chromium...' });
 
     // ── Phase 3: Launch Puppeteer ──────────────────────────────────────────────
-    const browser = await puppeteer.launch({
+    const launchArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--hide-scrollbars',
+        '--disable-web-security',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--run-all-compositor-stages-before-draw',
+    ];
+
+    const launchOptions = {
         headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--hide-scrollbars',
-            '--disable-web-security',
-            '--disable-background-timer-throttling',   // prevent tab throttling
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--run-all-compositor-stages-before-draw', // ensure complete paint before screenshot
-        ],
-        defaultViewport: { width, height }
-    });
+        args: IS_VERCEL ? [...chromiumArgs, ...launchArgs] : launchArgs,
+        defaultViewport: { width, height },
+    };
+
+    if (IS_VERCEL && executablePath) {
+        launchOptions.executablePath = await executablePath;
+    }
+
+    const browser = await puppeteer.launch(launchOptions);
 
     let page;
     let ffmpegProc;
@@ -376,6 +415,193 @@ async function main() {
     } finally {
         if (browser) await browser.close().catch(() => { });
         process.exit();
+    }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// SSR STATIC RENDERER  (Puppeteer — one screenshot per slide)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Uses the SAME headless Chromium + React pipeline as the full server render,
+// guaranteeing identical visual fidelity (fonts, Telugu text, themes, etc.).
+//
+// Instead of capturing every animation frame (slides × fps × duration),
+// we capture ONE settled screenshot per slide and use FFmpeg's concat demuxer
+// to hold each image for its exact audio duration.
+//
+// Speed: N screenshots instead of N × fps × avg_duration  (e.g. 9 vs 2700).
+// ════════════════════════════════════════════════════════════════════════════
+
+async function renderSSRStatic({ params, slides, width, height, fps, slideDurations, combinedAudioPath, tmpDir, outputPath }) {
+
+    writeStatus({ status: 'rendering', progress: 25, message: 'Launching headless Chromium...' });
+
+    // ── Launch Puppeteer (identical to normal server render) ───────────────────
+    const launchArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--hide-scrollbars',
+        '--disable-web-security',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--run-all-compositor-stages-before-draw',
+    ];
+
+    const launchOptions = {
+        headless: true,
+        args: IS_VERCEL ? [...chromiumArgs, ...launchArgs] : launchArgs,
+        defaultViewport: { width, height },
+    };
+
+    if (IS_VERCEL && executablePath) {
+        launchOptions.executablePath = await executablePath;
+    }
+
+    const browser = await puppeteer.launch(launchOptions);
+    let page;
+
+    try {
+        page = await browser.newPage();
+
+        // Inject render params so the auto-render page can hydrate
+        await page.evaluateOnNewDocument((renderParams) => {
+            window.__RENDER_PARAMS__ = renderParams;
+        }, params);
+
+        console.log('[ssr-static] Navigating to auto-render engine...');
+        await page.goto('http://localhost:3000/auto-render', { waitUntil: 'networkidle0' });
+
+        // Hide Next.js dev overlays
+        await page.evaluate(() => {
+            const style = document.createElement('style');
+            style.textContent = `
+                nextjs-portal, [data-nextjs-dialog-overlay], [data-nextjs-toast],
+                #__next-build-indicator, [data-next-mark], nextjs-dev-tools-widget,
+                [class*="nextjs"], [id*="__nextjs"] {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                }
+            `;
+            document.head.appendChild(style);
+        });
+
+        // Wait for the React app to expose seekToFrame
+        console.log('[ssr-static] Waiting for auto-render engine to be ready...');
+        await page.waitForFunction('typeof window.seekToFrame === "function"', { timeout: 30000 });
+        console.log('[ssr-static] Ready. Capturing one frame per slide...');
+
+        writeStatus({ status: 'rendering', progress: 30, message: 'Capturing slide frames...' });
+
+        // ── Build cumulative timeline (start frame of each slide) ─────────────
+        // We capture the LAST moment of each slide (just before transition)
+        // so that ALL animations (flowcharts, staggered bullets, etc.) are 100% complete.
+        const slideStartFrames = [];
+        let cumulativeTime = 0;
+        for (let i = 0; i < slides.length; i++) {
+            const dur = slideDurations[i];
+            // Seek to 0.1s before the slide ends — all animations are fully settled.
+            // For very short slides (<0.5s), just take the midpoint.
+            const settledOffset = dur > 0.5 ? dur - 0.1 : dur * 0.5;
+            const seekTime = cumulativeTime + settledOffset;
+            const seekFrame = Math.round(seekTime * fps);
+            slideStartFrames.push(seekFrame);
+            cumulativeTime += dur;
+        }
+
+        // ── Capture one PNG screenshot per slide ──────────────────────────────
+        const framePaths = [];
+
+        for (let i = 0; i < slides.length; i++) {
+            const targetFrame = slideStartFrames[i];
+
+            await page.evaluate(async (f) => {
+                await window.seekToFrame(f);
+            }, targetFrame);
+
+            const framePath = path.join(tmpDir, `frame-${i}.png`);
+            const buffer = await page.screenshot({
+                type: 'png',
+                clip: { x: 0, y: 0, width, height },
+            });
+
+            fs.writeFileSync(framePath, buffer);
+            framePaths.push(framePath);
+
+            const pct = 30 + Math.round(((i + 1) / slides.length) * 35);
+            writeStatus({ status: 'rendering', progress: pct, message: `Captured slide ${i + 1}/${slides.length}` });
+            console.log(`[ssr-static] Captured slide ${i + 1}/${slides.length} (frame ${targetFrame})`);
+        }
+
+        // ── Close browser — done with Puppeteer ──────────────────────────────
+        await browser.close().catch(() => {});
+
+        // ── Write FFmpeg concat manifest ──────────────────────────────────────
+        // Every entry gets an explicit duration matching its audio clip.
+        // The last entry is duplicated WITHOUT a duration line — this is required
+        // by the concat demuxer to flush the final frame, but we hard-trim
+        // the output with -t to prevent it from adding extra seconds.
+        const totalAudioDuration = slideDurations.reduce((a, b) => a + b, 0);
+        let concatContent = '';
+        for (let i = 0; i < framePaths.length; i++) {
+            const p = framePaths[i].replace(/\\/g, '/');
+            concatContent += `file '${p}'\nduration ${slideDurations[i].toFixed(6)}\n`;
+        }
+        // Concat demuxer requires the last file repeated to display the final frame
+        concatContent += `file '${framePaths[framePaths.length - 1].replace(/\\/g, '/')}'\n`;
+
+        const concatFile = path.join(tmpDir, 'concat.txt');
+        fs.writeFileSync(concatFile, concatContent, 'utf8');
+
+        // ── FFmpeg: concat demuxer → H.264 + AAC ─────────────────────────────
+        writeStatus({ status: 'rendering', progress: 68, message: 'Encoding video with FFmpeg...' });
+
+        const hasAudio = fs.existsSync(combinedAudioPath);
+        const ffmpegArgs = [
+            '-y',
+            '-f', 'concat', '-safe', '0', '-i', concatFile,
+            ...(hasAudio ? ['-i', combinedAudioPath] : []),
+            '-map', '0:v',
+            ...(hasAudio ? ['-map', '1:a'] : []),
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-r', fps.toString(),
+            ...(hasAudio ? ['-c:a', 'aac', '-b:a', '128k'] : []),
+            // Hard-trim to exact audio duration — prevents extra silent frames at the end
+            '-t', totalAudioDuration.toFixed(6),
+            '-movflags', '+faststart',
+            outputPath,
+        ];
+
+        console.log(`[ssr-static] FFmpeg: ${ffmpegArgs.join(' ')}`);
+
+        const ffmpegProc = spawn(ffmpegInstaller.path, ffmpegArgs, {
+            stdio: ['ignore', 'inherit', 'inherit'],
+        });
+
+        await new Promise((resolve, reject) => {
+            ffmpegProc.on('close', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error(`FFmpeg exited with code ${code}`));
+            });
+            ffmpegProc.on('error', reject);
+        });
+
+        writeStatus({ status: 'complete', progress: 100, message: 'Video ready for download.', outputPath });
+        console.log('[ssr-static] ✅ Complete!');
+
+    } catch (err) {
+        console.error('[ssr-static] Error:', err);
+        writeStatus({ status: 'error', progress: 0, message: err.message });
+    } finally {
+        if (browser) await browser.close().catch(() => {});
     }
 }
 
